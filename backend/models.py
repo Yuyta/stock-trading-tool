@@ -5,8 +5,13 @@ from typing import Optional, List
 class AnalyzeRequest(BaseModel):
     symbol: str
     timeframe: str = "1d"
+    trade_style: str = "swing"  # "swing" (中長期) or "day" (デイトレ・信用)
     jquants_refresh_token: Optional[str] = None
     gemini_api_key: Optional[str] = None
+
+class ChartDataPoint(BaseModel):
+    time: str
+    price: float
 
 
 class MacroResult(BaseModel):
@@ -74,4 +79,5 @@ class AnalysisResult(BaseModel):
     technical: Optional[TechnicalResult] = None
     qualitative: Optional[QualitativeResult] = None
     risk: Optional[RiskInfo] = None
+    chart_data: List[ChartDataPoint] = []
     error: Optional[str] = None

@@ -16,12 +16,22 @@ def normalize_jp_symbol(symbol: str) -> str:
     return symbol
 
 
-def fetch_price_history(symbol: str, period: str = "6mo") -> Optional[pd.DataFrame]:
+def fetch_price_history(symbol: str, timeframe: str = "1d") -> Optional[pd.DataFrame]:
     try:
         if is_jp_stock(symbol):
             symbol = normalize_jp_symbol(symbol)
         ticker = yf.Ticker(symbol)
-        df = ticker.history(period=period)
+        
+        if timeframe in ["1m", "2m", "5m"]:
+            period = "5d"
+        elif timeframe in ["15m", "30m", "60m", "90m", "1h"]:
+            period = "1mo"
+        elif timeframe in ["1d"]:
+            period = "6mo"
+        else:
+            period = "2y"
+            
+        df = ticker.history(period=period, interval=timeframe)
         return df if not df.empty else None
     except Exception:
         return None

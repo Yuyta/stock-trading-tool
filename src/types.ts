@@ -3,8 +3,14 @@
 export interface AnalyzeRequest {
     symbol: string;
     timeframe: string;
+    trade_style?: string;
     jquants_refresh_token?: string;
     gemini_api_key?: string;
+}
+
+export interface ChartDataPoint {
+    time: string;
+    price: number;
 }
 
 export interface MacroResult {
@@ -72,6 +78,7 @@ export interface AnalysisResult {
     technical?: TechnicalResult;
     qualitative?: QualitativeResult;
     risk?: RiskInfo;
+    chart_data?: ChartDataPoint[];
     error?: string;
 }
 

@@ -4,6 +4,9 @@ import {
   TrendingUp, TrendingDown, Minus, ShieldCheck, ShieldAlert, ShieldX,
   AlertCircle, ChevronRight, Server
 } from 'lucide-react';
+import {
+  ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid
+} from 'recharts';
 import { AnalysisResult, AppSettings } from './types';
 import { SettingsModal } from './SettingsModal';
 import './App.css';
@@ -62,16 +65,15 @@ function MacroBadge({ passed, vixMode, blockReason }: { passed: boolean; vixMode
 export default function App() {
   const [symbol, setSymbol] = useState('AAPL');
   const [timeframe, setTimeframe] = useState('1d');
+  const [tradeStyle, setTradeStyle] = useState('swing');
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [result, setResult] = useState<AnalysisResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [settings, setSettings] = useState<AppSettings>(loadSettings);
-  const [bars, setBars] = useState<number[]>([]);
   const [backendOnline, setBackendOnline] = useState<boolean | null>(null);
 
   useEffect(() => {
-    setBars(Array.from({ length: 24 }, () => Math.floor(Math.random() * 60) + 20));
     fetch('/api/health')
       .then(r => r.ok ? setBackendOnline(true) : setBackendOnline(false))
       .catch(() => setBackendOnline(false));
@@ -95,6 +97,7 @@ export default function App() {
         body: JSON.stringify({
           symbol: symbol.trim().toUpperCase(),
           timeframe,
+          trade_style: tradeStyle,
           jquants_refresh_token: settings.jquantsRefreshToken || undefined,
           gemini_api_key: settings.geminiApiKey || undefined,
         }),
@@ -102,7 +105,6 @@ export default function App() {
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
       const data: AnalysisResult = await resp.json();
       setResult(data);
-      setBars(Array.from({ length: 24 }, () => Math.floor(Math.random() * 60) + 20));
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : '通信エラー');
     } finally {
@@ -171,9 +173,24 @@ export default function App() {
                   placeholder="例: AAPL, 7203, MSFT"
                 />
               </div>
+              <div className="input-group" style={{ flex: 2 }}>
+                <span className="input-label">トレードスタイル</span>
+                <select className="input" value={tradeStyle} onChange={(e) => {
+                  setTradeStyle(e.target.value);
+                  if (e.target.value === 'day' && timeframe === '1d') {
+                    setTimeframe('5m');
+                  }
+                }}>
+                  <option value="swing">中長期投資 (スイング)</option>
+                  <option value="day">短期・デイトレード</option>
+                </select>
+              </div>
               <div className="input-group" style={{ flex: 1 }}>
                 <span className="input-label">時間軸</span>
                 <select className="input" value={timeframe} onChange={(e) => setTimeframe(e.target.value)}>
+                  <option value="1m">1分足</option>
+                  <option value="5m">5分足</option>
+                  <option value="15m">15分足</option>
                   <option value="1h">1時間足</option>
                   <option value="1d">日足</option>
                   <option value="1wk">週足</option>
@@ -206,22 +223,44 @@ export default function App() {
               <Activity className="card-icon" />
               <span>価格チャート（参考）</span>
             </div>
-            <div className="chart-placeholder">
-              <div className="chart-bars">
-                {bars.map((h, i) => (
-                  <div
-                    key={i}
-                    className="chart-bar"
-                    style={{
-                      height: `${h}%`,
-                      background: i === bars.length - 1 && result
-                        ? getSignalColor(result.signal)
-                        : 'var(--accent-primary)',
-                      opacity: i === bars.length - 1 ? 0.85 : 0.2,
-                    }}
-                  />
-                ))}
-              </div>
+            <div className="chart-placeholder" style={{ height: '220px', padding: '10px 0', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              {result?.chart_data && result.chart_data.length > 0 ? (
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={result.chart_data} margin={{ top: 5, right: 0, left: -20, bottom: 0 }}>
+                    <defs>
+                      <linearGradient id="colorPrice" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor={getSignalColor(result.signal)} stopOpacity={0.5} />
+                        <stop offset="95%" stopColor={getSignalColor(result.signal)} stopOpacity={0} />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
+                    <XAxis
+                      dataKey="time"
+                      tick={{ fill: 'var(--text-muted)', fontSize: 11 }}
+                      tickLine={false}
+                      axisLine={false}
+                      minTickGap={20}
+                    />
+                    <YAxis
+                      domain={['auto', 'auto']}
+                      tick={{ fill: 'var(--text-muted)', fontSize: 11 }}
+                      tickLine={false}
+                      axisLine={false}
+                      tickFormatter={(val) => val.toLocaleString()}
+                    />
+                    <Tooltip
+                      contentStyle={{ backgroundColor: 'rgba(15, 23, 42, 0.9)', borderColor: 'rgba(255,255,255,0.1)', color: 'white' }}
+                      itemStyle={{ color: 'var(--accent-primary)' }}
+                      labelStyle={{ color: 'var(--text-muted)' }}
+                    />
+                    <Area type="monotone" dataKey="price" stroke={getSignalColor(result.signal)} fillOpacity={1} fill="url(#colorPrice)" />
+                  </AreaChart>
+                </ResponsiveContainer>
+              ) : (
+                <div style={{ color: 'var(--text-muted)' }}>
+                  チャートデータがありません（判定を実行してください）
+                </div>
+              )}
             </div>
 
             {result?.technical && (

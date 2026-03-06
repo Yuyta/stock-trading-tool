@@ -15,7 +15,9 @@ def analyze(request: AnalyzeRequest) -> AnalysisResult:
     jp_stock = is_jp_stock(symbol)
 
     # --- Decide analysis mode upfront ---
-    if has_gemini and (has_jquants or not jp_stock):
+    if request.trade_style == "day":
+        analysis_mode = "デイトレモード"
+    elif has_gemini and (has_jquants or not jp_stock):
         analysis_mode = "フルモード"
     elif has_gemini or has_jquants:
         analysis_mode = "標準モード"
@@ -31,7 +33,7 @@ def analyze(request: AnalyzeRequest) -> AnalysisResult:
         )
 
     # === Fetch price history ===
-    price_df = fetch_price_history(symbol)
+    price_df = fetch_price_history(symbol, request.timeframe)
     if price_df is None or price_df.empty:
         return AnalysisResult(
             symbol=symbol, signal="見送り",
@@ -52,8 +54,9 @@ def analyze(request: AnalyzeRequest) -> AnalysisResult:
     technical = _analyze_technical(price_df)
 
     # === Layer 2: Fundamental ===
-    # JP stocks: only use J-Quants when key is provided. yfinance is used for US stocks always.
-    if jp_stock and not has_jquants:
+    if request.trade_style == "day":
+        fundamental = _fundamental_unavailable_day()
+    elif jp_stock and not has_jquants:
         # No J-Quants key for JP stock → skip API-based fundamental scoring
         fundamental = _fundamental_unavailable()
     else:
@@ -99,6 +102,19 @@ def analyze(request: AnalyzeRequest) -> AnalysisResult:
         trailing_stop_from_high_10pct=round(high_60d * 0.90, 2),
     )
 
+    # === Build Chart Data ===
+    from models import ChartDataPoint
+    chart_data = []
+    if price_df is not None and not price_df.empty:
+        # Limit to max 100 points for frontend rendering
+        df_chart = price_df.tail(100)
+        for idx, row in df_chart.iterrows():
+            if request.timeframe in ["1m", "2m", "5m", "15m", "30m", "60m", "90m", "1h"]:
+                time_str = idx.strftime("%m-%d %H:%M")
+            else:
+                time_str = idx.strftime("%m-%d")
+            chart_data.append(ChartDataPoint(time=time_str, price=round(float(row["Close"]), 2)))
+
     return AnalysisResult(
         symbol=symbol,
         signal=signal,
@@ -110,6 +126,7 @@ def analyze(request: AnalyzeRequest) -> AnalysisResult:
         technical=technical,
         qualitative=qualitative,
         risk=risk,
+        chart_data=chart_data,
     )
 
 
@@ -247,6 +264,18 @@ def _fundamental_unavailable() -> FundamentalResult:
     result.reasons = [
         "⚪ 日本株のファンダメンタル分析にはJ-Quantsリフレッシュトークンが必要です",
         "　　設定画面からJ-Quantsキーを入力すると詳細な財務分析が可能になります",
+    ]
+    return result
+
+def _fundamental_unavailable_day() -> FundamentalResult:
+    result = FundamentalResult()
+    result.growth_score = 0
+    result.valuation_score = 0
+    result.sub_total = 0
+    result.max_score = 0  # excluded from ratio calculation
+    result.data_source = "非対象（デイトレモード）"
+    result.reasons = [
+        "⚪ デイトレードモードのため、ファンダメンタル（長期目線）分析は除外されています",
     ]
     return result
 
