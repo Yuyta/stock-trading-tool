@@ -124,8 +124,6 @@ export default function App() {
     return <Minus size={52} />;
   };
 
-  const totalMax = 100;
-
   return (
     <div className="app-container">
       {showSettings && (
@@ -285,9 +283,9 @@ export default function App() {
                 {getSignalIcon(result.signal)}
                 <div>
                   <div className="signal-text">{result.signal}</div>
-                  {result.total_score != null && (
+                  {result.total_score != null && result.max_score > 0 && (
                     <div className="score-badge" style={{ borderColor: getSignalColor(result.signal) }}>
-                      {result.total_score} / {totalMax}
+                      {result.total_score} / {result.max_score} <span style={{ fontSize: '0.7em', marginLeft: '6px', fontWeight: 'normal' }}>({result.analysis_mode})</span>
                     </div>
                   )}
                 </div>
@@ -318,12 +316,18 @@ export default function App() {
                 <div className="score-section">
                   <div className="score-section-header">
                     <span>📊 ファンダメンタル</span>
-                    <span className="score-num">{result.fundamental.sub_total} / 50</span>
+                    {result.fundamental.max_score > 0 ? (
+                      <span className="score-num">{result.fundamental.sub_total} / {result.fundamental.max_score}</span>
+                    ) : (
+                      <span className="score-num" style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>スコア対象外</span>
+                    )}
                   </div>
-                  <ScoreBar value={result.fundamental.sub_total} max={50} color="var(--accent-primary)" />
-                  <div className="sub-scores">
-                    <span>成長性: {result.fundamental.growth_score}/30</span>
-                    <span>割安性: {result.fundamental.valuation_score}/20</span>
+                  {result.fundamental.max_score > 0 && <ScoreBar value={result.fundamental.sub_total} max={result.fundamental.max_score} color="var(--accent-primary)" />}
+                  <div className="sub-scores" style={{ justifyContent: 'space-between' }}>
+                    <div style={{ display: 'flex', gap: '1rem' }}>
+                      {result.fundamental.max_score > 0 && <span>成長性: {result.fundamental.growth_score}  割安性: {result.fundamental.valuation_score}</span>}
+                    </div>
+                    <span className="tag" style={{ border: 'none', background: 'rgba(255,255,255,0.1)' }}>ソース: {result.fundamental.data_source}</span>
                   </div>
                   <div className="kv-grid">
                     {result.fundamental.per != null && <><span>PER</span><span>{result.fundamental.per}倍</span></>}
@@ -360,9 +364,16 @@ export default function App() {
                 <div className="score-section">
                   <div className="score-section-header">
                     <span>📰 定性・ニュース</span>
-                    <span className="score-num">{result.qualitative.score} / 10</span>
+                    {result.qualitative.max_score > 0 ? (
+                      <span className="score-num">{result.qualitative.score} / {result.qualitative.max_score}</span>
+                    ) : (
+                      <span className="score-num" style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>スコア対象外</span>
+                    )}
                   </div>
-                  <ScoreBar value={result.qualitative.score} max={10} color="var(--warning)" />
+                  {result.qualitative.max_score > 0 && <ScoreBar value={result.qualitative.score} max={result.qualitative.max_score} color="var(--warning)" />}
+                  <div className="sub-scores" style={{ justifyContent: 'flex-end', marginTop: result.qualitative.max_score > 0 ? 0 : '-0.5rem' }}>
+                    <span className="tag" style={{ border: 'none', background: 'rgba(255,255,255,0.1)' }}>分析: {result.qualitative.data_source}</span>
+                  </div>
                   <ul className="reason-list">
                     {result.qualitative.reasons.map((r, i) => (
                       <li key={i}><ChevronRight size={13} />{r}</li>

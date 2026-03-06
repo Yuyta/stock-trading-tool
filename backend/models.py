@@ -24,10 +24,12 @@ class FundamentalResult(BaseModel):
     growth_score: float = 0
     valuation_score: float = 0
     sub_total: float = 0
+    max_score: float = 50  # adjusts by data source
     op_income_growth_avg: Optional[float] = None
     per: Optional[float] = None
     pbr: Optional[float] = None
     roe: Optional[float] = None
+    data_source: str = "yfinance"  # "J-Quants" | "yfinance" | "取得不可"
     reasons: List[str] = []
 
 
@@ -47,8 +49,10 @@ class TechnicalResult(BaseModel):
 
 class QualitativeResult(BaseModel):
     score: float = 0
+    max_score: float = 10  # 10 with Gemini, 7 without
     sentiment: str = "neutral"
     news_analyzed: bool = False
+    data_source: str = "キーワード"  # "Gemini AI" | "キーワード" | "なし"
     reasons: List[str] = []
 
 
@@ -63,6 +67,8 @@ class AnalysisResult(BaseModel):
     symbol: str
     signal: str
     total_score: Optional[float] = None
+    max_score: float = 100  # actual max based on available APIs
+    analysis_mode: str = "基本モード"  # "フルモード" | "標準モード" | "基本モード"
     macro: MacroResult
     fundamental: Optional[FundamentalResult] = None
     technical: Optional[TechnicalResult] = None

@@ -22,10 +22,12 @@ export interface FundamentalResult {
     growth_score: number;
     valuation_score: number;
     sub_total: number;
+    max_score: number;       // Dynamically set (0 if no API key for JP stocks)
     op_income_growth_avg?: number;
     per?: number;
     pbr?: number;
     roe?: number;
+    data_source: string;     // "J-Quants" | "yfinance" | "未設定（J-Quantsキー必要）"
     reasons: string[];
 }
 
@@ -45,8 +47,10 @@ export interface TechnicalResult {
 
 export interface QualitativeResult {
     score: number;
+    max_score: number;       // 10 with Gemini, 7 without, 0 if no news
     sentiment: string;
     news_analyzed: boolean;
+    data_source: string;     // "Gemini AI" | "キーワード" | "なし"
     reasons: string[];
 }
 
@@ -61,6 +65,8 @@ export interface AnalysisResult {
     symbol: string;
     signal: string;
     total_score?: number;
+    max_score: number;         // Sum of max scores of active layers
+    analysis_mode: string;     // "フルモード" | "標準モード" | "基本モード"
     macro: MacroResult;
     fundamental?: FundamentalResult;
     technical?: TechnicalResult;

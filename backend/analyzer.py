@@ -10,17 +10,32 @@ from data_fetcher import fetch_price_history, fetch_macro_data, fetch_fundamenta
 
 def analyze(request: AnalyzeRequest) -> AnalysisResult:
     symbol = request.symbol.strip().upper()
+    has_jquants = bool(request.jquants_refresh_token)
+    has_gemini = bool(request.gemini_api_key)
+    jp_stock = is_jp_stock(symbol)
+
+    # --- Decide analysis mode upfront ---
+    if has_gemini and (has_jquants or not jp_stock):
+        analysis_mode = "フルモード"
+    elif has_gemini or has_jquants:
+        analysis_mode = "標準モード"
+    else:
+        analysis_mode = "基本モード"
 
     # === Layer 1: Macro Risk Filter ===
     macro = _analyze_macro()
     if not macro.passed:
-        return AnalysisResult(symbol=symbol, signal="見送り", macro=macro)
+        return AnalysisResult(
+            symbol=symbol, signal="見送り",
+            macro=macro, analysis_mode=analysis_mode,
+        )
 
     # === Fetch price history ===
     price_df = fetch_price_history(symbol)
     if price_df is None or price_df.empty:
         return AnalysisResult(
-            symbol=symbol, signal="見送り", macro=macro,
+            symbol=symbol, signal="見送り",
+            macro=macro, analysis_mode=analysis_mode,
             error=f"'{symbol}' のデータを取得できませんでした。銘柄コードを確認してください。",
         )
 
@@ -30,33 +45,48 @@ def analyze(request: AnalyzeRequest) -> AnalysisResult:
     liquidity_ok = None
     if avg_vol is not None and avg_close is not None:
         daily_turnover = avg_vol * avg_close
-        threshold = 100_000_000 if is_jp_stock(symbol) else 1_000_000
+        threshold = 100_000_000 if jp_stock else 1_000_000
         liquidity_ok = daily_turnover >= threshold
 
-    # === Layer 3: Technical ===
+    # === Layer 3: Technical (always runs, no API key needed) ===
     technical = _analyze_technical(price_df)
 
-    # === Layer 2: Fundamental + Qualitative ===
-    fund_data = fetch_fundamentals(symbol, request.jquants_refresh_token)
-    fundamental = _score_fundamental(fund_data)
-    qualitative = _score_qualitative(fund_data, request.gemini_api_key)
+    # === Layer 2: Fundamental ===
+    # JP stocks: only use J-Quants when key is provided. yfinance is used for US stocks always.
+    if jp_stock and not has_jquants:
+        # No J-Quants key for JP stock → skip API-based fundamental scoring
+        fundamental = _fundamental_unavailable()
+    else:
+        fund_data = fetch_fundamentals(symbol, request.jquants_refresh_token)
+        data_source = "J-Quants" if (jp_stock and has_jquants) else "yfinance"
+        fundamental = _score_fundamental(fund_data, data_source)
 
-    # === Total Score ===
-    total = technical.score + qualitative.score
-    if fundamental:
-        total += fundamental.sub_total
+    # === Layer 4: Qualitative (news sentiment) ===
+    # Run in all cases but scoring differs by Gemini availability
+    if jp_stock and not has_jquants:
+        # If fundamental data not fetched, news headlines still come from yfinance
+        news_data = fetch_fundamentals(symbol, None)
+    else:
+        news_data = fund_data  # type: ignore  (already fetched above)
 
-    # === Signal ===
-    if total >= 85:
+    qualitative = _score_qualitative(news_data, request.gemini_api_key if has_gemini else None)
+
+    # === Total Score & Max Score ===
+    total = technical.score + qualitative.score + fundamental.sub_total
+    max_score = 40 + qualitative.max_score + fundamental.max_score  # Technical(40) + Qualitative + Fundamental
+
+    # === Normalize signal thresholds to the actual max score ===
+    ratio = total / max_score if max_score > 0 else 0
+    if ratio >= 0.85:
         signal = "Strong Buy"
-    elif total >= 65:
+    elif ratio >= 0.65:
         signal = "Buy"
-    elif total >= 45:
+    elif ratio >= 0.45:
         signal = "Hold"
     else:
         signal = "Sell / Avoid"
 
-    if macro.market_below_ma75 and total < 85:
+    if macro.market_below_ma75 and ratio < 0.85:
         signal = signal + " (市場注意)"
 
     # === Risk Info ===
@@ -73,6 +103,8 @@ def analyze(request: AnalyzeRequest) -> AnalysisResult:
         symbol=symbol,
         signal=signal,
         total_score=round(total, 1),
+        max_score=round(max_score, 1),
+        analysis_mode=analysis_mode,
         macro=macro,
         fundamental=fundamental,
         technical=technical,
@@ -85,7 +117,6 @@ def _analyze_macro() -> MacroResult:
     data = fetch_macro_data()
     result = MacroResult()
 
-    # VIX
     vix_s = data.get("vix")
     if vix_s is not None and len(vix_s) > 0:
         vix = float(vix_s.iloc[-1])
@@ -99,7 +130,6 @@ def _analyze_macro() -> MacroResult:
         else:
             result.vix_mode = "normal"
 
-    # Oil / Gold 2-sigma check
     for key, attr in [("wti", "oil_sigma"), ("gold", "gold_sigma")]:
         s = data.get(key)
         if s is not None and len(s) >= 20:
@@ -111,7 +141,6 @@ def _analyze_macro() -> MacroResult:
             if sigma >= 2.0:
                 result.commodity_alert = True
 
-    # Nikkei vs 75-day MA
     nk = data.get("nikkei")
     if nk is not None and len(nk) >= 75:
         ma75 = float(nk.rolling(75).mean().iloc[-1])
@@ -159,7 +188,6 @@ def _analyze_technical(price_df: pd.DataFrame) -> TechnicalResult:
         else:
             reasons.append("❌ ゴールデンクロスなし・75日EMA下方")
 
-        # RSI(14)
         delta = closes.diff()
         gain = delta.clip(lower=0).rolling(14).mean()
         loss = (-delta).clip(lower=0).rolling(14).mean()
@@ -182,7 +210,6 @@ def _analyze_technical(price_df: pd.DataFrame) -> TechnicalResult:
         else:
             reasons.append(f"❌ RSI {rsi:.0f}: 過度な売られすぎ")
 
-        # Volume surge
         if volumes is not None and len(volumes) >= 6:
             avg5 = float(volumes.tail(6).iloc[:-1].mean())
             cur_vol = float(volumes.iloc[-1])
@@ -206,13 +233,32 @@ def _analyze_technical(price_df: pd.DataFrame) -> TechnicalResult:
     return result
 
 
-def _score_fundamental(fund_data: dict) -> FundamentalResult:
+def _fundamental_unavailable() -> FundamentalResult:
+    """
+    Called when JP stock and no J-Quants key.
+    Returns a zero-score result with max_score=0 so it doesn't skew the total.
+    """
     result = FundamentalResult()
+    result.growth_score = 0
+    result.valuation_score = 0
+    result.sub_total = 0
+    result.max_score = 0  # excluded from ratio calculation
+    result.data_source = "未設定（J-Quantsキー必要）"
+    result.reasons = [
+        "⚪ 日本株のファンダメンタル分析にはJ-Quantsリフレッシュトークンが必要です",
+        "　　設定画面からJ-Quantsキーを入力すると詳細な財務分析が可能になります",
+    ]
+    return result
+
+
+def _score_fundamental(fund_data: dict, data_source: str) -> FundamentalResult:
+    result = FundamentalResult()
+    result.data_source = data_source
     reasons = []
     growth_score = 0.0
     val_score = 0.0
 
-    # Growth (0-30)
+    # --- Growth (0–30 pts) ---
     growth = fund_data.get("op_income_growth_avg")
     result.op_income_growth_avg = round(growth, 1) if growth is not None else None
     if growth is not None:
@@ -231,10 +277,11 @@ def _score_fundamental(fund_data: dict) -> FundamentalResult:
         else:
             reasons.append(f"❌ 営業利益成長率 {growth:.1f}%（減益）")
     else:
-        growth_score = 10
-        reasons.append("⚠️ 営業利益成長データなし（中間点）")
+        # No growth data from this source → 0 pts (not estimated)
+        growth_score = 0
+        reasons.append("⚠️ 営業利益成長データなし（スコア対象外）")
 
-    # Valuation (0-20): PER 7pt + PBR 6pt + ROE 7pt
+    # --- Valuation (0–20 pts): PER 7 + PBR 6 + ROE 7 ---
     per = fund_data.get("per")
     pbr = fund_data.get("pbr")
     roe = fund_data.get("roe")
@@ -242,6 +289,7 @@ def _score_fundamental(fund_data: dict) -> FundamentalResult:
     result.pbr = round(float(pbr), 2) if pbr else None
     result.roe = round(float(roe), 1) if roe else None
 
+    data_missing = 0
     if per:
         if per <= 12:
             val_score += 7; reasons.append(f"✅ PER {per:.1f}倍（割安）")
@@ -252,7 +300,7 @@ def _score_fundamental(fund_data: dict) -> FundamentalResult:
         else:
             reasons.append(f"❌ PER {per:.1f}倍（割高）")
     else:
-        val_score += 2; reasons.append("⚠️ PERデータなし")
+        data_missing += 7; reasons.append("⚪ PERデータなし（スコア対象外）")
 
     if pbr:
         if pbr <= 1.2:
@@ -262,7 +310,7 @@ def _score_fundamental(fund_data: dict) -> FundamentalResult:
         else:
             reasons.append(f"❌ PBR {pbr:.2f}倍（割高）")
     else:
-        val_score += 2; reasons.append("⚠️ PBRデータなし")
+        data_missing += 6; reasons.append("⚪ PBRデータなし（スコア対象外）")
 
     if roe:
         if roe >= 10:
@@ -274,8 +322,10 @@ def _score_fundamental(fund_data: dict) -> FundamentalResult:
         else:
             reasons.append(f"❌ ROE {roe:.1f}%（低収益）")
     else:
-        val_score += 2; reasons.append("⚠️ ROEデータなし")
+        data_missing += 7; reasons.append("⚪ ROEデータなし（スコア対象外）")
 
+    # Max score = 50 minus the portions where data was missing
+    result.max_score = 50 - data_missing
     result.growth_score = round(growth_score, 1)
     result.valuation_score = round(val_score, 1)
     result.sub_total = round(growth_score + val_score, 1)
@@ -288,43 +338,60 @@ def _score_qualitative(fund_data: dict, gemini_api_key: Optional[str]) -> Qualit
     headlines = [h for h in fund_data.get("news_headlines", []) if h]
 
     if not headlines:
-        result.score = 5.0
-        result.reasons.append("⚠️ ニュースデータなし（中立スコア）")
+        result.score = 0.0
+        result.max_score = 0  # no data → excluded from total
+        result.data_source = "なし"
+        result.reasons.append("⚪ ニュースデータなし（スコア対象外）")
         return result
 
+    # ── WITHOUT Gemini API: keyword-based, max 7 pts ──
     if not gemini_api_key:
-        neg_kw = ["不祥事", "下方修正", "赤字", "倒産", "scandal", "fraud", "bankruptcy", "war", "downgrade", "warning"]
-        pos_kw = ["増益", "上方修正", "最高益", "好決算", "growth", "upgrade", "record", "beat", "strong"]
+        result.data_source = "キーワード"
+        result.max_score = 7  # cap because keyword analysis is less reliable
+
+        neg_kw = ["不祥事", "下方修正", "赤字", "倒産", "scandal", "fraud", "bankruptcy",
+                  "war", "downgrade", "warning", "recall", "investigation"]
+        pos_kw = ["増益", "上方修正", "最高益", "好決算", "growth", "upgrade",
+                  "record", "beat", "strong", "dividend", "buyback"]
+
         neg = sum(1 for h in headlines for kw in neg_kw if kw.lower() in h.lower())
         pos = sum(1 for h in headlines for kw in pos_kw if kw.lower() in h.lower())
+
         if neg > pos:
-            result.score = max(0.0, 5.0 - neg * 2.0)
+            result.score = max(0.0, 5.0 - neg * 1.5)
             result.sentiment = "negative"
-            result.reasons.append(f"⚠️ ネガティブキーワード検知（{neg}件）—Gemini APIキー設定で詳細分析可")
+            result.reasons.append(f"⚠️ ネガティブキーワード検知（{neg}件）")
         elif pos > 0:
-            result.score = min(10.0, 6.0 + pos)
+            result.score = min(7.0, 5.0 + pos * 0.8)
             result.sentiment = "positive"
             result.reasons.append(f"✅ ポジティブキーワード検知（{pos}件）")
         else:
-            result.score = 5.0
+            result.score = 4.0
             result.sentiment = "neutral"
             result.reasons.append("➖ 中立的なニュース")
+
+        result.reasons.append("　　Gemini APIキーを設定するとAI詳細分析（満点10点）が利用可能")
         result.news_analyzed = True
         return result
 
+    # ── WITH Gemini API: AI-powered, max 10 pts ──
+    result.data_source = "Gemini AI"
+    result.max_score = 10
     try:
         import google.generativeai as genai
-        import json, re as re_mod
+        import json
+        import re as re_mod
+
         genai.configure(api_key=gemini_api_key)
         text_headlines = "\n".join(f"- {h}" for h in headlines)
         prompt = f"""以下の株式ニュースヘッドラインを分析し、投資家視点での感情スコアを0〜10の整数で返してください。
-0=非常にネガティブ、5=中立、10=非常にポジティブ
+0=非常にネガティブ（不祥事・倒産・戦争等）、5=中立、10=非常にポジティブ（増益・最高益等）
 
 ヘッドライン:
 {text_headlines}
 
 以下のJSON形式のみで回答してください:
-{{"score": <0-10の整数>, "sentiment": "<positive/neutral/negative>", "reason": "<50字以内の日本語>"}}"""
+{{"score": <0-10の整数>, "sentiment": "<positive/neutral/negative>", "reason": "<50字以内の日本語で分析根拠>"}}"""
 
         model = genai.GenerativeModel("gemini-2.0-flash")
         resp = model.generate_content(prompt)
@@ -333,10 +400,10 @@ def _score_qualitative(fund_data: dict, gemini_api_key: Optional[str]) -> Qualit
             parsed = json.loads(m.group())
             result.score = float(max(0, min(10, parsed.get("score", 5))))
             result.sentiment = parsed.get("sentiment", "neutral")
-            result.reasons.append(f"✅ Gemini解析: {parsed.get('reason', '')}")
+            result.reasons.append(f"✅ Gemini AI解析: {parsed.get('reason', '')}")
             result.news_analyzed = True
     except Exception as e:
         result.score = 5.0
-        result.reasons.append(f"⚠️ Gemini APIエラー: {str(e)[:60]}")
+        result.reasons.append(f"⚠️ Gemini APIエラー: {str(e)[:80]}")
 
     return result
