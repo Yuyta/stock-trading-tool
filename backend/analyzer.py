@@ -53,6 +53,8 @@ def analyze(request: AnalyzeRequest) -> AnalysisResult:
     # === Layer 3: Technical (always runs, no API key needed) ===
     technical = _analyze_technical(price_df)
 
+    fund_data = None
+
     # === Layer 2: Fundamental ===
     if request.trade_style == "day":
         fundamental = _fundamental_unavailable_day()
@@ -65,14 +67,10 @@ def analyze(request: AnalyzeRequest) -> AnalysisResult:
         fundamental = _score_fundamental(fund_data, data_source)
 
     # === Layer 4: Qualitative (news sentiment) ===
-    # Run in all cases but scoring differs by Gemini availability
-    if jp_stock and not has_jquants:
-        # If fundamental data not fetched, news headlines still come from yfinance
-        news_data = fetch_fundamentals(symbol, None)
-    else:
-        news_data = fund_data  # type: ignore  (already fetched above)
+    if fund_data is None:
+        fund_data = fetch_fundamentals(symbol, request.jquants_refresh_token if has_jquants else None)
 
-    qualitative = _score_qualitative(news_data, request.gemini_api_key if has_gemini else None)
+    qualitative = _score_qualitative(fund_data, request.gemini_api_key if has_gemini else None)
 
     # === Total Score & Max Score ===
     total = technical.score + qualitative.score + fundamental.sub_total
