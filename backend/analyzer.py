@@ -404,6 +404,32 @@ def _score_qualitative(fund_data: dict, gemini_api_key: Optional[str]) -> Qualit
     # ── WITH Gemini API: AI-powered, max 10 pts ──
     result.data_source = "Gemini AI"
     result.max_score = 10
+    
+    # Pre-define keywords for fallback in case of API error
+    neg_kw = ["不祥事", "下方修正", "赤字", "倒産", "scandal", "fraud", "bankruptcy",
+              "war", "downgrade", "warning", "recall", "investigation"]
+    pos_kw = ["増益", "上方修正", "最高益", "好決算", "growth", "upgrade",
+              "record", "beat", "strong", "dividend", "buyback"]
+    
+    def run_keyword_fallback(error_msg: str):
+        result.data_source = "キーワード(エラー切替)"
+        result.max_score = 7
+        neg = sum(1 for h in headlines for kw in neg_kw if kw.lower() in h.lower())
+        pos = sum(1 for h in headlines for kw in pos_kw if kw.lower() in h.lower())
+        if neg > pos:
+            result.score = max(0.0, 5.0 - neg * 1.5)
+            result.sentiment = "negative"
+            result.reasons.append(f"⚠️ API制限のためキーワード判定（{neg}件）")
+        elif pos > 0:
+            result.score = min(7.0, 5.0 + pos * 0.8)
+            result.sentiment = "positive"
+            result.reasons.append(f"✅ API制限のためキーワード判定（{pos}件）")
+        else:
+            result.score = 4.0
+            result.sentiment = "neutral"
+            result.reasons.append("➖ API制限のためキーワード判定（中立）")
+        result.reasons.append(f"エラー詳細: {error_msg[:40]}...")
+
     try:
         import google.generativeai as genai
         import json
@@ -420,7 +446,8 @@ def _score_qualitative(fund_data: dict, gemini_api_key: Optional[str]) -> Qualit
 以下のJSON形式のみで回答してください:
 {{"score": <0-10の整数>, "sentiment": "<positive/neutral/negative>", "reason": "<50字以内の日本語で分析根拠>"}}"""
 
-        model = genai.GenerativeModel("gemini-2.0-flash")
+        # Using gemini-1.5-flash for higher free quota compatibility
+        model = genai.GenerativeModel("gemini-1.5-flash")
         resp = model.generate_content(prompt)
         m = re_mod.search(r'\{.*\}', resp.text, re_mod.DOTALL)
         if m:
@@ -429,8 +456,9 @@ def _score_qualitative(fund_data: dict, gemini_api_key: Optional[str]) -> Qualit
             result.sentiment = parsed.get("sentiment", "neutral")
             result.reasons.append(f"✅ Gemini AI解析: {parsed.get('reason', '')}")
             result.news_analyzed = True
+        else:
+            run_keyword_fallback("JSON解析失敗")
     except Exception as e:
-        result.score = 5.0
-        result.reasons.append(f"⚠️ Gemini APIエラー: {str(e)[:80]}")
+        run_keyword_fallback(str(e))
 
     return result
