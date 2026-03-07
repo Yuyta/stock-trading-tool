@@ -447,7 +447,7 @@ def _score_qualitative(fund_data: dict, gemini_api_key: Optional[str]) -> Qualit
 {{"score": <0-10の整数>, "sentiment": "<positive/neutral/negative>", "reason": "<50字以内の日本語で分析根拠>"}}"""
 
         # Using gemini-1.5-flash-latest for maximum compatibility and stability
-        model = genai.GenerativeModel("gemini-1.5-flash-latest")
+        model = genai.GenerativeModel("gemini-3.1-flash-lite-preview")
         resp = model.generate_content(prompt)
         m = re_mod.search(r'\{.*\}', resp.text, re_mod.DOTALL)
         if m:
