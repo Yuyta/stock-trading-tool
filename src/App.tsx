@@ -434,11 +434,11 @@ export default function App() {
                         </span>
                       </>
                     )}
-                    {result.risk.trailing_stop_7pct != null && (
-                      <><span>損切り目安(−7%)</span><span>{result.risk.trailing_stop_7pct.toLocaleString()}</span></>
+                    {result.risk.trailing_stop_base != null && (
+                      <><span>{result.risk.trailing_stop_base_label}</span><span>{result.risk.trailing_stop_base.toLocaleString()}</span></>
                     )}
-                    {result.risk.trailing_stop_from_high_10pct != null && (
-                      <><span>高値から−10%</span><span>{result.risk.trailing_stop_from_high_10pct.toLocaleString()}</span></>
+                    {result.risk.trailing_stop_high != null && (
+                      <><span>{result.risk.trailing_stop_high_label}</span><span>{result.risk.trailing_stop_high.toLocaleString()}</span></>
                     )}
                   </div>
                 </div>

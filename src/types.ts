@@ -63,8 +63,10 @@ export interface QualitativeResult {
 export interface RiskInfo {
     liquidity_ok?: boolean;
     avg_daily_volume?: number;
-    trailing_stop_7pct?: number;
-    trailing_stop_from_high_10pct?: number;
+    trailing_stop_base?: number;
+    trailing_stop_base_label: string;
+    trailing_stop_high?: number;
+    trailing_stop_high_label: string;
 }
 
 export interface AnalysisResult {

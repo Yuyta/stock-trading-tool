@@ -64,8 +64,10 @@ class QualitativeResult(BaseModel):
 class RiskInfo(BaseModel):
     liquidity_ok: Optional[bool] = None
     avg_daily_volume: Optional[float] = None
-    trailing_stop_7pct: Optional[float] = None
-    trailing_stop_from_high_10pct: Optional[float] = None
+    trailing_stop_base: Optional[float] = None
+    trailing_stop_base_label: str = "損切り目安(−7%)"
+    trailing_stop_high: Optional[float] = None
+    trailing_stop_high_label: str = "高値から−10%"
 
 
 class AnalysisResult(BaseModel):

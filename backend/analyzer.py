@@ -47,11 +47,14 @@ def analyze(request: AnalyzeRequest) -> AnalysisResult:
     liquidity_ok = None
     if avg_vol is not None and avg_close is not None:
         daily_turnover = avg_vol * avg_close
-        threshold = 100_000_000 if jp_stock else 1_000_000
+        if request.trade_style == "day":
+            threshold = 500_000_000 if jp_stock else 5_000_000  # Stricter for day trading
+        else:
+            threshold = 100_000_000 if jp_stock else 1_000_000
         liquidity_ok = daily_turnover >= threshold
 
     # === Layer 3: Technical (always runs, no API key needed) ===
-    technical = _analyze_technical(price_df)
+    technical = _analyze_technical(price_df, request.trade_style)
 
     fund_data = None
 
@@ -70,7 +73,7 @@ def analyze(request: AnalyzeRequest) -> AnalysisResult:
     if fund_data is None:
         fund_data = fetch_fundamentals(symbol, request.jquants_refresh_token if has_jquants else None)
 
-    qualitative = _score_qualitative(fund_data, request.gemini_api_key if has_gemini else None)
+    qualitative = _score_qualitative(fund_data, request.gemini_api_key if has_gemini else None, request.trade_style)
 
     # === Total Score & Max Score ===
     total = technical.score + qualitative.score + fundamental.sub_total
@@ -87,18 +90,31 @@ def analyze(request: AnalyzeRequest) -> AnalysisResult:
     else:
         signal = "Sell / Avoid"
 
-    if macro.market_below_ma75 and ratio < 0.85:
+    if macro.market_below_ma75 and ratio < 0.85 and request.trade_style != "day":
         signal = signal + " (市場注意)"
 
     # === Risk Info ===
     current_price = float(price_df["Close"].iloc[-1])
     high_60d = float(price_df["Close"].tail(60).max())
-    risk = RiskInfo(
-        liquidity_ok=liquidity_ok,
-        avg_daily_volume=float(avg_vol) if avg_vol is not None else None,
-        trailing_stop_7pct=round(current_price * 0.93, 2),
-        trailing_stop_from_high_10pct=round(high_60d * 0.90, 2),
-    )
+    
+    if request.trade_style == "day":
+        risk = RiskInfo(
+            liquidity_ok=liquidity_ok,
+            avg_daily_volume=float(avg_vol) if avg_vol is not None else None,
+            trailing_stop_base=round(current_price * 0.98, 2),
+            trailing_stop_base_label="損切り目安(−2%)",
+            trailing_stop_high=round(high_60d * 0.97, 2),
+            trailing_stop_high_label="高値から−3%",
+        )
+    else:
+        risk = RiskInfo(
+            liquidity_ok=liquidity_ok,
+            avg_daily_volume=float(avg_vol) if avg_vol is not None else None,
+            trailing_stop_base=round(current_price * 0.93, 2),
+            trailing_stop_base_label="損切り目安(−7%)",
+            trailing_stop_high=round(high_60d * 0.90, 2),
+            trailing_stop_high_label="高値から−10%",
+        )
 
     # === Build Chart Data ===
     from models import ChartDataPoint
@@ -164,13 +180,15 @@ def _analyze_macro() -> MacroResult:
     return result
 
 
-def _analyze_technical(price_df: pd.DataFrame) -> TechnicalResult:
+def _analyze_technical(price_df: pd.DataFrame, trade_style: str) -> TechnicalResult:
     result = TechnicalResult()
     score = 0.0
     reasons = []
     try:
         closes = price_df["Close"]
         volumes = price_df["Volume"] if "Volume" in price_df.columns else None
+        highs = price_df["High"] if "High" in price_df.columns else closes
+        lows = price_df["Low"] if "Low" in price_df.columns else closes
 
         ema5 = closes.ewm(span=5, adjust=False).mean()
         ema20 = closes.ewm(span=20, adjust=False).mean()
@@ -191,17 +209,48 @@ def _analyze_technical(price_df: pd.DataFrame) -> TechnicalResult:
         result.golden_cross = gc
         result.above_ema75 = above
 
-        if gc and above:
-            score += 15
-            reasons.append("✅ ゴールデンクロス形成 & 75日EMA上方（強気トレンド）")
-        elif gc:
-            score += 8
-            reasons.append("⚠️ ゴールデンクロス形成（75日EMA未達）")
-        elif above:
-            score += 5
-            reasons.append("⚠️ 75日EMA上方（クロス未形成）")
+        # Modifying scoring based on trade_style
+        if trade_style == "day":
+            # In Day Trading, short-term crossover (ema5 & ema20) is much more important than ema75
+            if gc:
+                score += 15
+                reasons.append("✅ 単期ゴールデンクロス上昇中（モメンタム強）")
+            elif cur > e5:
+                score += 10
+                reasons.append("⚠️ 5線より上で推移（押し目待ち）")
+            else:
+                reasons.append("❌ 単期デッドクロスまたは5線下方（弱気）")
+                
+            # Add ATR/Volatility Check
+            try:
+                tr1 = highs - lows
+                tr2 = (highs - closes.shift(1)).abs()
+                tr3 = (lows - closes.shift(1)).abs()
+                tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+                atr = tr.rolling(14).mean()
+                current_atr = float(atr.iloc[-1])
+                current_atr_pct = (current_atr / cur) * 100
+                
+                if current_atr_pct > 2.0:
+                    score += 5
+                    reasons.append(f"✅ 十分なボラティリティあり (ATR: {current_atr_pct:.1f}%)")
+                elif current_atr_pct < 0.5:
+                    score -= 5
+                    reasons.append(f"❌ ボラティリティ不足 (ATR: {current_atr_pct:.1f}%)")
+            except Exception:
+                pass
         else:
-            reasons.append("❌ ゴールデンクロスなし・75日EMA下方")
+            if gc and above:
+                score += 15
+                reasons.append("✅ ゴールデンクロス形成 & 75日EMA上方（強気トレンド）")
+            elif gc:
+                score += 8
+                reasons.append("⚠️ ゴールデンクロス形成（75日EMA未達）")
+            elif above:
+                score += 5
+                reasons.append("⚠️ 75日EMA上方（クロス未形成）")
+            else:
+                reasons.append("❌ ゴールデンクロスなし・75日EMA下方")
 
         delta = closes.diff()
         gain = delta.clip(lower=0).rolling(14).mean()
@@ -211,17 +260,17 @@ def _analyze_technical(price_df: pd.DataFrame) -> TechnicalResult:
         result.rsi = round(rsi, 1)
 
         if 30 <= rsi <= 60:
-            score += 15
+            score += 10 if trade_style == "day" else 15
             reasons.append(f"✅ RSI {rsi:.0f}: 適正ゾーン（上昇余地あり）")
         elif 20 <= rsi < 30:
-            score += 10
+            score += 5 if trade_style == "day" else 10
             reasons.append(f"⚠️ RSI {rsi:.0f}: 売られすぎ圏（反転期待）")
         elif 60 < rsi <= 70:
-            score += 8
-            reasons.append(f"⚠️ RSI {rsi:.0f}: やや過熱気味")
+            score += 15 if trade_style == "day" else 8
+            reasons.append(f"✅ RSI {rsi:.0f}: やや過熱気味（短期的な勢いあり）")
         elif rsi > 70:
-            score += 2
-            reasons.append(f"❌ RSI {rsi:.0f}: 買われすぎ（過熱）")
+            score += 8 if trade_style == "day" else 2
+            reasons.append(f"⚠️ RSI {rsi:.0f}: 買われすぎ（過熱）")
         else:
             reasons.append(f"❌ RSI {rsi:.0f}: 過度な売られすぎ")
 
@@ -233,17 +282,18 @@ def _analyze_technical(price_df: pd.DataFrame) -> TechnicalResult:
                 result.volume_ratio = round(ratio, 2)
                 if ratio >= 1.5:
                     result.volume_surge = True
-                    score += 10
-                    reasons.append(f"✅ 出来高急増（{ratio:.1f}x 5日平均比）")
+                    score += 15 if trade_style == "day" else 10
+                    reasons.append(f"✅ 出来高急増（{ratio:.1f}x 平均比）")
                 elif ratio >= 1.2:
-                    score += 5
+                    score += 8 if trade_style == "day" else 5
                     reasons.append(f"⚠️ 出来高やや増加（{ratio:.1f}x）")
                 else:
                     reasons.append(f"➖ 出来高変化なし（{ratio:.1f}x）")
     except Exception as e:
         reasons.append(f"テクニカル計算エラー: {str(e)}")
 
-    result.score = round(score, 1)
+    # Ensure max score stays balanced if trade_style is day
+    result.score = round(min(40.0, max(0.0, score)), 1)
     result.reasons = reasons
     return result
 
@@ -360,7 +410,7 @@ def _score_fundamental(fund_data: dict, data_source: str) -> FundamentalResult:
     return result
 
 
-def _score_qualitative(fund_data: dict, gemini_api_key: Optional[str]) -> QualitativeResult:
+def _score_qualitative(fund_data: dict, gemini_api_key: Optional[str], trade_style: str) -> QualitativeResult:
     result = QualitativeResult()
     headlines = [h for h in fund_data.get("news_headlines", []) if h]
 
@@ -437,7 +487,18 @@ def _score_qualitative(fund_data: dict, gemini_api_key: Optional[str]) -> Qualit
 
         genai.configure(api_key=gemini_api_key)
         text_headlines = "\n".join(f"- {h}" for h in headlines)
-        prompt = f"""以下の株式ニュースヘッドラインを分析し、投資家視点での感情スコアを0〜10の整数で返してください。
+        
+        if trade_style == "day":
+            prompt = f"""以下の株式ニュースヘッドラインを分析し、**「今日～明日の短期的な値動き・ボラティリティへの影響（デイトレード視点）」**を基準に感情スコアを0〜10の整数で返してください。
+0=急落リスク（不祥事、致命的な発表など）、5=中立（今日は材料視されない無風）、10=急騰確実のアクティブ材料（サプライズ決算、テーマ株の本命発表など）
+
+ヘッドライン:
+{text_headlines}
+
+以下のJSON形式のみで回答してください:
+{{"score": <0-10の整数>, "sentiment": "<positive/neutral/negative>", "reason": "<50字以内の日本語で分析根拠>"}}"""
+        else:
+            prompt = f"""以下の株式ニュースヘッドラインを分析し、中長期的な投資家視点での感情スコアを0〜10の整数で返してください。
 0=非常にネガティブ（不祥事・倒産・戦争等）、5=中立、10=非常にポジティブ（増益・最高益等）
 
 ヘッドライン:
