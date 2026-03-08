@@ -142,10 +142,26 @@ export default function App() {
           <span>TradeAlgo Pro</span>
         </div>
         <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
+          {/* API Connectivity Status */}
           <div className={`backend-badge ${backendOnline === true ? 'online' : backendOnline === false ? 'offline' : 'checking'}`}>
             <Server size={14} />
-            <span>{backendOnline === true ? 'API接続中' : backendOnline === false ? 'API未接続' : '確認中'}</span>
+            <span>
+              {backendOnline === true ? (
+                <>
+                  {settings.jquantsRefreshToken && settings.geminiApiKey ? 'J-Quants + Gemini 接続中' :
+                    settings.jquantsRefreshToken ? 'J-Quants 接続中' :
+                      settings.geminiApiKey ? 'Gemini 接続中' :
+                        'API接続済み (キー未設定)'}
+                </>
+              ) : backendOnline === false ? 'サーバー未起動' : '接続確認中'}
+            </span>
           </div>
+          {(!settings.jquantsRefreshToken && !settings.geminiApiKey && backendOnline === true) && (
+            <div className="backend-badge offline" style={{ background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444' }}>
+              <AlertCircle size={14} />
+              <span>APIキー未設定</span>
+            </div>
+          )}
           <button className="button secondary" onClick={() => setShowSettings(true)}>
             <SettingsIcon size={18} />
             <span>設定</span>
