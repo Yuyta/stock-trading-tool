@@ -116,6 +116,7 @@ def _fetch_jquants(symbol: str, refresh_token: str) -> Dict[str, Any]:
             return result
 
         headers = {"Authorization": f"Bearer {id_token}"}
+        # Standard J-Quants code is 4 digits
         code = symbol.split(".")[0]
 
         stmts_resp = requests.get(
@@ -127,19 +128,44 @@ def _fetch_jquants(symbol: str, refresh_token: str) -> Dict[str, Any]:
         if stmts_resp.status_code == 200:
             stmts = stmts_resp.json().get("statements", [])
             if stmts:
+                # Sort by DisclosuresSince to get the latest filing
+                stmts = sorted(stmts, key=lambda x: x.get("DisclosuresSince", ""), reverse=False)
                 latest = stmts[-1]
-                result["per"] = _to_float(latest.get("PER") or latest.get("PriceEarningsRatio"))
-                result["pbr"] = _to_float(latest.get("PBR") or latest.get("PriceBookValueRatio"))
-                result["roe"] = _to_float(latest.get("ROE"))
-                op_key = next((k for k in ["OperatingProfit", "OperatingIncome"] if k in latest), None)
-                if op_key and len(stmts) >= 3:
-                    op_vals = [_to_float(s.get(op_key)) for s in stmts[-4:] if _to_float(s.get(op_key)) is not None]
-                    growths = [
-                        (op_vals[i] - op_vals[i-1]) / abs(op_vals[i-1]) * 100
-                        for i in range(1, len(op_vals)) if op_vals[i-1] != 0
-                    ]
-                    if growths:
-                        result["op_income_growth_avg"] = float(np.mean(growths))
+                
+                # J-Quants sometimes provides PER/PBR/ROE in specific summary filings
+                # but often we need to calculate them or find them in different fields.
+                result["per"] = _to_float(latest.get("PriceEarningsRatio") or latest.get("PER"))
+                result["pbr"] = _to_float(latest.get("PriceBookValueRatio") or latest.get("PBR"))
+                
+                # ROE Calculation Fallback
+                roe = _to_float(latest.get("ROE") or latest.get("ReturnOnEquity"))
+                if roe is None:
+                    # Try calculate NetIncome / Equity
+                    net_income = _to_float(latest.get("NetIncome") or latest.get("Profit"))
+                    equity = _to_float(latest.get("Equity") or latest.get("NetAssets"))
+                    if net_income and equity and equity != 0:
+                        roe = (net_income / equity) * 100
+                result["roe"] = roe
+                
+                # Growth calculation
+                # Use "NetSales" or "OperatingProfit"
+                op_key = next((k for k in ["OperatingProfit", "OperatingIncome", "NetSales"] if k in latest), None)
+                if op_key and len(stmts) >= 2:
+                    # Get historical values for the same key
+                    op_vals = []
+                    for s in stmts:
+                        v = _to_float(s.get(op_key))
+                        if v is not None:
+                            op_vals.append(v)
+                    
+                    if len(op_vals) >= 2:
+                        growths = [
+                            (op_vals[i] - op_vals[i-1]) / abs(op_vals[i-1]) * 100
+                            for i in range(1, len(op_vals)) if op_vals[i-1] != 0
+                        ]
+                        if growths:
+                            # Average of last 3 periods if available
+                            result["op_income_growth_avg"] = float(np.mean(growths[-3:]))
     except Exception:
         pass
 
@@ -155,3 +181,26 @@ def _fetch_jquants(symbol: str, refresh_token: str) -> Dict[str, Any]:
     except Exception:
         pass
     return result
+
+
+def fetch_fundamentals(symbol: str, jquants_refresh_token: Optional[str] = None) -> Dict[str, Any]:
+    # 戦略: J-Quants（信頼性の高い財務）と yfinance（比率・ニュース）を統合
+    yf_data = _fetch_yfinance_fundamentals(symbol)
+    
+    if is_jp_stock(symbol) and jquants_refresh_token:
+        jq_data = _fetch_jquants(symbol, jquants_refresh_token)
+        
+        # J-Quantsから取得できた項目を優先的に上書き
+        for key in ["per", "pbr", "roe", "op_income_growth_avg"]:
+            if jq_data.get(key) is not None:
+                yf_data[key] = jq_data[key]
+        
+        # J-Quantsからニュースが取れなかった場合 yf のものを使う (既にyf_dataに入っている)
+        if jq_data.get("news_headlines"):
+            yf_data["news_headlines"] = jq_data["news_headlines"]
+            
+        # J-Quants成功フラグ（analyzer側での表示切替に使用可能）
+        if any(jq_data.get(k) is not None for k in ["per", "pbr", "roe", "op_income_growth_avg"]):
+            yf_data["_jq_success"] = True
+            
+    return yf_data
