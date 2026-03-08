@@ -48,43 +48,91 @@ def fetch_macro_data() -> Dict[str, Any]:
     return result
 
 
-def fetch_fundamentals(symbol: str, jquants_refresh_token: Optional[str] = None) -> Dict[str, Any]:
-    if is_jp_stock(symbol) and jquants_refresh_token:
-        return _fetch_jquants(symbol, jquants_refresh_token)
-    return _fetch_yfinance_fundamentals(symbol)
 
 
 def _fetch_yfinance_fundamentals(symbol: str) -> Dict[str, Any]:
     result: Dict[str, Any] = {}
     try:
         ticker = yf.Ticker(symbol)
-        info = ticker.info
-        result["per"] = info.get("forwardPE") or info.get("trailingPE")
-        result["pbr"] = info.get("priceToBook")
-        roe = info.get("returnOnEquity")
-        result["roe"] = roe * 100 if roe is not None else None
-        result["average_volume"] = info.get("averageVolume") or info.get("averageVolume10days")
+        # info取得（新方式）
+        try:
+            info = ticker.get_info()
+        except Exception:
+            info = {}
 
+        # -------------------------
+        # PER
+        # -------------------------
+        per = info.get("forwardPE") or info.get("trailingPE")
+
+        # -------------------------
+        # PBR
+        # -------------------------
+        pbr = info.get("priceToBook")
+
+        # -------------------------
+        # ROE
+        # -------------------------
+        roe = info.get("returnOnEquity")
+        if roe is not None:
+            roe = roe * 100
+
+        result["per"] = per
+        result["pbr"] = pbr
+        result["roe"] = roe
+
+        # -------------------------
+        # 平均出来高
+        # -------------------------
+        result["average_volume"] = (
+            info.get("averageVolume")
+            or info.get("averageVolume10days")
+        )
+        # -------------------------
+        # 営業利益成長率
+        # -------------------------
         try:
             fin = ticker.financials
             if fin is not None and not fin.empty:
-                op_key = next((k for k in fin.index if "Operating" in k and "Income" in k), None)
+                op_key = next(
+                    (k for k in fin.index if "Operating" in k and "Income" in k),
+                    None
+                )
+
                 if op_key:
-                    vals = list(fin.loc[op_key].sort_index().dropna())
-                    growths = [
-                        (vals[i] - vals[i-1]) / abs(vals[i-1]) * 100
-                        for i in range(1, len(vals)) if vals[i-1] != 0
-                    ]
+
+                    vals = list(
+                        fin.loc[op_key]
+                        .sort_index()
+                        .dropna()
+                    )
+
+                    growths = []
+
+                    for i in range(1, len(vals)):
+                        prev = vals[i-1]
+
+                        if prev != 0:
+                            growth = (vals[i] - prev) / abs(prev) * 100
+                            growths.append(growth)
+
                     if growths:
-                        result["op_income_growth_avg"] = float(np.mean(growths[-3:]))
+                        result["op_income_growth_avg"] = float(
+                            np.mean(growths[-3:])
+                        )
+
         except Exception:
             pass
 
+        # -------------------------
+        # ニュース
+        # -------------------------
         try:
             news = ticker.news
             if news:
                 result["news_headlines"] = [
-                    n.get("content", {}).get("title", "") or n.get("title", "")
+                    n.get("content", {}).get("title", "")
+                    or n.get("title", "")
                     for n in news[:10]
                 ]
         except Exception:
