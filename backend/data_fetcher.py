@@ -53,6 +53,10 @@ def fetch_macro_data() -> Dict[str, Any]:
 def _fetch_yfinance_fundamentals(symbol: str) -> Dict[str, Any]:
     result: Dict[str, Any] = {}
     try:
+        # 日本株ならシンボルを正規化 (8136 -> 8136.T)
+        if is_jp_stock(symbol):
+            symbol = normalize_jp_symbol(symbol)
+            
         ticker = yf.Ticker(symbol)
         # info取得（新方式）
         try:
@@ -233,6 +237,7 @@ def _fetch_jquants(symbol: str, refresh_token: str) -> Dict[str, Any]:
 
 def fetch_fundamentals(symbol: str, jquants_refresh_token: Optional[str] = None) -> Dict[str, Any]:
     # 戦略: J-Quants（信頼性の高い財務）と yfinance（比率・ニュース）を統合
+    # 正規化は内部の関数でも行われるが、ここでも明示しておく
     yf_data = _fetch_yfinance_fundamentals(symbol)
     
     if is_jp_stock(symbol) and jquants_refresh_token:

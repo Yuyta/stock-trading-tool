@@ -67,16 +67,23 @@ def analyze(request: AnalyzeRequest) -> AnalysisResult:
     else:
         fund_data = fetch_fundamentals(symbol, request.jquants_refresh_token)
         
-        # どのソースから何が取れたかに応じてデータソース表示を切り替える
+        # どのソースからデータが取れたかを詳細に判定
         sources = []
-        if fund_data.get("_jq_success"):
+        is_jq = bool(fund_data.get("_jq_success"))
+        has_metrics = any(fund_data.get(k) is not None for k in ["per", "pbr", "roe"])
+        
+        if is_jq:
             sources.append("J-Quants")
-        if any(fund_data.get(k) is not None for k in ["per", "pbr"]) and not fund_data.get("_jq_success"):
-            sources.append("yfinance")
-        elif not sources: # どちらからもまともに取れなかった場合
-            sources.append("不明 / 取得不可")
+        if has_metrics and (not is_jq or not has_jquants): 
+            # もしJQでも取れたがyfからも取れたか、JQがない場合にyfが成功していれば表示
+            if "yfinance" not in sources:
+                sources.append("yfinance")
+        
+        if not sources:
+            data_source = "不明 / 取得不可"
+        else:
+            data_source = " + ".join(sources)
             
-        data_source = " + ".join(sources) if sources else "yfinance"
         fundamental = _score_fundamental(fund_data, data_source)
 
     # === Layer 4: Qualitative (news sentiment) ===
