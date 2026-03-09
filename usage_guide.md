@@ -9,8 +9,10 @@ TradeAlgo Pro を最大限に活用するためのセットアップと利用方
 2. 仮想環境を有効化します（Windowsの場合: `.\.venv\Scripts\activate`）。
 3. サーバーを起動します:
    ```bash
-   uvicorn main:app --reload --port 8000
+   uvicorn main:app --host 0.0.0.0 --port 8000 --reload
    ```
+   > [!TIP]
+   > iPhoneからアクセスする場合は、PCのIPアドレス（例: `http://192.168.1.10:5173`）をブラウザに入力してください。
 
 ### フロントエンドの起動
 1. プロジェクトのルートディレクトリで新しいターミナルを開きます。

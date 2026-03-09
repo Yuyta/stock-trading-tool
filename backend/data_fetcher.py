@@ -39,12 +39,23 @@ def fetch_price_history(symbol: str, timeframe: str = "1d") -> Optional[pd.DataF
 
 def fetch_macro_data() -> Dict[str, Any]:
     result: Dict[str, Any] = {}
-    for key, sym in {"vix": "^VIX", "wti": "CL=F", "gold": "GC=F", "nikkei": "^N225"}.items():
+    items = {"vix": "^VIX", "wti": "CL=F", "gold": "GC=F", "nikkei": "^N225"}
+    
+    import concurrent.futures
+    
+    def fetch_one(key, sym):
         try:
             df = yf.Ticker(sym).history(period="3mo")
-            result[key] = df["Close"] if not df.empty else None
+            return key, df["Close"] if not df.empty else None
         except Exception:
-            result[key] = None
+            return key, None
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
+        future_to_key = {executor.submit(fetch_one, k, s): k for k, s in items.items()}
+        for future in concurrent.futures.as_completed(future_to_key):
+            k, data = future.result()
+            result[k] = data
+            
     return result
 
 
