@@ -26,11 +26,8 @@ def analyze(request: AnalyzeRequest) -> AnalysisResult:
 
     # === Layer 1: Macro Risk Filter ===
     macro = _analyze_macro()
-    if not macro.passed:
-        return AnalysisResult(
-            symbol=symbol, signal="見送り",
-            macro=macro, analysis_mode=analysis_mode,
-        )
+    # Note: Previously returned early here. Now we continue to show scores, 
+    # but the macro status will influence the final signal and warnings.
 
     # === Fetch price history ===
     price_df = fetch_price_history(symbol, request.timeframe)
@@ -107,7 +104,12 @@ def analyze(request: AnalyzeRequest) -> AnalysisResult:
     else:
         signal = "Sell / Avoid"
 
-    if macro.market_below_ma75 and ratio < 0.85 and request.trade_style != "day":
+    # マクロ環境に応じた警告ラベルの付与
+    if not macro.passed:
+        signal = f"回避推奨 ({macro.block_reason})"
+    elif macro.vix_mode == "caution":
+        signal = signal + " (VIX警戒)"
+    elif macro.market_below_ma75 and ratio < 0.85 and request.trade_style != "day":
         signal = signal + " (市場注意)"
 
     # === Risk Info ===
@@ -169,14 +171,20 @@ def _analyze_macro() -> MacroResult:
     if vix_s is not None and len(vix_s) > 0:
         vix = float(vix_s.iloc[-1])
         result.vix = round(vix, 2)
-        if vix > 30:
+        if vix > 40:
             result.vix_mode = "emergency"
             result.passed = False
-            result.block_reason = f"VIX緊急モード ({vix:.1f} > 30): 新規買い禁止"
+            result.block_reason = f"VIXパニックモード ({vix:.1f} > 40)"
+        elif vix > 30:
+            result.vix_mode = "caution"
+            result.passed = True  # 表示のみでブロックはしない
+            result.block_reason = f"VIX高リスク ({vix:.1f} > 30)"
         elif vix > 25:
             result.vix_mode = "caution"
+            result.passed = True
         else:
             result.vix_mode = "normal"
+            result.passed = True
 
     for key, attr in [("wti", "oil_sigma"), ("gold", "gold_sigma")]:
         s = data.get(key)
