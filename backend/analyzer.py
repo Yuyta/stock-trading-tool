@@ -277,6 +277,17 @@ def _analyze_macro() -> MacroResult:
         result.strong_sectors = [k for k, outperf in sectors_perf.items() if outperf > 0.02]
         result.weak_sectors = [k for k, outperf in sectors_perf.items() if outperf < -0.02]
 
+    # Populate warnings for easier consumption
+    if not result.passed:
+        result.warnings.append(f"緊急: {result.block_reason}")
+    elif result.vix_mode == "caution":
+        result.warnings.append("VIX指数が高いため、新規建玉の縮小を推奨します。")
+    
+    if result.market_below_ma75:
+        result.warnings.append("主要指数が75日移動平均線を下回っています。")
+    if result.commodity_alert:
+        result.warnings.append("コモディティ価格（原油・金）の急変が検出されました。")
+
     return result
 
 
@@ -284,167 +295,142 @@ def _analyze_technical(price_df: pd.DataFrame, trade_style: str) -> TechnicalRes
     result = TechnicalResult()
     score = 0.0
     reasons = []
+
     try:
         closes = price_df["Close"]
-        volumes = price_df["Volume"] if "Volume" in price_df.columns else None
-        highs = price_df["High"] if "High" in price_df.columns else closes
-        lows = price_df["Low"] if "Low" in price_df.columns else closes
+        volumes = price_df["Volume"]
+        highs = price_df["High"]
+        lows = price_df["Low"]
 
+        cur = float(closes.iloc[-1])
+        result.current_price = round(cur, 2)
+
+        # EMA Calculation
         ema5 = closes.ewm(span=5, adjust=False).mean()
         ema20 = closes.ewm(span=20, adjust=False).mean()
         ema75 = closes.ewm(span=75, adjust=False).mean()
-
-        cur = float(closes.iloc[-1])
+        
         e5 = float(ema5.iloc[-1])
         e20 = float(ema20.iloc[-1])
         e75 = float(ema75.iloc[-1])
-
-        result.current_price = round(cur, 2)
+        
         result.ema5 = round(e5, 2)
         result.ema20 = round(e20, 2)
         result.ema75 = round(e75, 2)
+        result.above_ema75 = cur > e75
 
-        gc = e5 > e20
-        above = cur > e75
-        result.golden_cross = gc
-        result.above_ema75 = above
+        # Golden Cross check (5 crosses 20)
+        if len(ema5) >= 2:
+            prev_e5 = float(ema5.iloc[-2])
+            prev_e20 = float(ema20.iloc[-2])
+            result.golden_cross = (prev_e5 <= prev_e20) and (e5 > e20)
 
-        # MACD (12, 26, 9)
-        ema12 = closes.ewm(span=12, adjust=False).mean()
-        ema26 = closes.ewm(span=26, adjust=False).mean()
-        macd = ema12 - ema26
-        signal_line = macd.ewm(span=9, adjust=False).mean()
-        macd_cur = float(macd.iloc[-1])
-        sig_cur = float(signal_line.iloc[-1])
-        if len(macd) >= 2:
-            macd_cross_up = float(macd.iloc[-2]) < float(signal_line.iloc[-2]) and macd_cur > sig_cur
-        else:
-            macd_cross_up = False
+        # =====================================================
+        # Relative Strength
+        # =====================================================
+        if len(closes) >= 20:
+            stock_perf = cur / float(closes.iloc[-20]) - 1
+            if stock_perf > 0.05:
+                score += 6
+                reasons.append(f"✅ Relative Strength強 ({stock_perf*100:.1f}%)")
+            elif stock_perf > 0:
+                score += 3
+                reasons.append("⚠️ 市場平均以上の推移")
 
-        result.macd = round(macd_cur, 2)
-        result.macd_signal = round(sig_cur, 2)
+        # =====================================================
+        # Relative Volume (RVOL)
+        # =====================================================
+        if len(volumes) >= 20:
+            avg_vol_20 = float(volumes.tail(20).mean())
+            if avg_vol_20 > 0:
+                rvol = float(volumes.iloc[-1]) / avg_vol_20
+                result.volume_ratio = round(rvol, 2)
+                result.volume_surge = rvol >= 2.0
 
-        # VWAP
-        if volumes is not None:
-            typical_price = (highs + lows + closes) / 3
-            vwap = (typical_price * volumes).cumsum() / volumes.cumsum()
-            vwap_cur = float(vwap.iloc[-1])
-            is_above_vwap = cur > vwap_cur
-        else:
-            vwap_cur = cur
-            is_above_vwap = False
-        
-        result.vwap = round(vwap_cur, 2)
+                if rvol >= 2.0:
+                    score += 10
+                    reasons.append(f"🔥 RVOL {rvol:.1f}（資金流入）")
+                elif rvol >= 1.5:
+                    score += 6
+                    reasons.append(f"✅ 出来高増加 {rvol:.1f}x")
 
-        # Bollinger Bands (20, 2)
-        std20 = closes.rolling(20).std()
-        upper_band = ema20 + (std20 * 2)
-        lower_band = ema20 - (std20 * 2)
-        if len(upper_band) > 0 and not pd.isna(upper_band.iloc[-1]):
-            result.bollinger_upper = round(float(upper_band.iloc[-1]), 2)
-            result.bollinger_lower = round(float(lower_band.iloc[-1]), 2)
+        # =====================================================
+        # Trend Score
+        # =====================================================
+        if e5 > e20 and cur > e75:
+            score += 15
+            reasons.append("✅ 強い上昇トレンド")
+        elif e5 > e20:
+            score += 8
+            reasons.append("⚠️ 短期上昇")
+        elif cur < e75:
+            reasons.append("❌ 長期トレンド下落中")
 
-        # Modifying scoring based on trade_style
-        if trade_style == "day":
-            # In Day Trading, short-term crossover (ema5 & ema20) is much more important than ema75
-            if gc:
-                score += 15
-                reasons.append("✅ 単期ゴールデンクロス上昇中（モメンタム強）")
-            elif cur > e5:
-                score += 10
-                reasons.append("⚠️ 5線より上で推移（押し目待ち）")
-            else:
-                reasons.append("❌ 単期デッドクロスまたは5線下方（弱気）")
-                
-            # Add ATR/Volatility Check
-            try:
-                tr1 = highs - lows
-                tr2 = (highs - closes.shift(1)).abs()
-                tr3 = (lows - closes.shift(1)).abs()
-                tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
-                atr = tr.rolling(14).mean()
-                current_atr = float(atr.iloc[-1])
-                current_atr_pct = (current_atr / cur) * 100
-                
-                if current_atr_pct > 2.0:
-                    score += 5
-                    reasons.append(f"✅ 十分なボラティリティあり (ATR: {current_atr_pct:.1f}%)")
-                elif current_atr_pct < 0.5:
-                    score -= 5
-                    reasons.append(f"❌ ボラティリティ不足 (ATR: {current_atr_pct:.1f}%)")
-                    
-            except Exception:
-                pass
-                
-            # VWAPブレイク
-            if is_above_vwap:
-                score += 10
-                reasons.append(f"✅ VWAPブレイク・上方推移（短期モメンタム強）")
-        else:
-            if gc and above:
-                score += 15
-                reasons.append("✅ ゴールデンクロス形成 & 75日EMA上方（強気トレンド）")
-            elif gc:
-                score += 8
-                reasons.append("⚠️ ゴールデンクロス形成（75日EMA未達）")
-            elif above:
-                score += 5
-                reasons.append("⚠️ 75日EMA上方（クロス未形成）")
-            else:
-                reasons.append("❌ ゴールデンクロスなし・75日EMA下方")
-                
-            if macd_cross_up:
-                score += 10
-                reasons.append("✅ MACDシグナル上抜け（トレンド転換サイン）")
-            if is_above_vwap:
-                score += 5
-                reasons.append("✅ VWAP上方推移（機関投資家平均コスト以上）")
-
+        # =====================================================
+        # RSI
+        # =====================================================
         delta = closes.diff()
         gain = delta.clip(lower=0).rolling(14).mean()
         loss = (-delta).clip(lower=0).rolling(14).mean()
-        rs = gain / (loss + 1e-10)
+        rs = gain / (loss + 1e-9)
         rsi = float((100 - 100 / (1 + rs)).iloc[-1])
         result.rsi = round(rsi, 1)
 
-        if 30 <= rsi <= 60:
-            score += 10 if trade_style == "day" else 15
-            reasons.append(f"✅ RSI {rsi:.0f}: 適正ゾーン（上昇余地あり）")
-        elif 20 <= rsi < 30:
-            score += 5 if trade_style == "day" else 10
-            reasons.append(f"⚠️ RSI {rsi:.0f}: 売られすぎ圏（反転期待）")
-        elif 60 < rsi <= 70:
-            score += 15 if trade_style == "day" else 8
-            reasons.append(f"✅ RSI {rsi:.0f}: やや過熱気味（短期的な勢いあり）")
+        if 40 <= rsi <= 65:
+            score += 10
+            reasons.append(f"✅ RSI良好 {rsi:.0f}")
         elif rsi > 70:
-            score += 8 if trade_style == "day" else 2
-            reasons.append(f"⚠️ RSI {rsi:.0f}: 買われすぎ（過熱）")
-        else:
-            reasons.append(f"❌ RSI {rsi:.0f}: 過度な売られすぎ")
+            score += 4
+            reasons.append("⚠️ RSI過熱")
+        elif rsi < 30:
+            reasons.append("⚠️ RSI売られすぎ")
 
-        if volumes is not None and len(volumes) >= 6:
-            avg5 = float(volumes.tail(6).iloc[:-1].mean())
-            cur_vol = float(volumes.iloc[-1])
-            if avg5 > 0:
-                ratio = cur_vol / avg5
-                result.volume_ratio = round(ratio, 2)
-                if ratio >= 1.5:
-                    result.volume_surge = True
-                    score += 15 if trade_style == "day" else 10
-                    reasons.append(f"✅ 出来高急増（{ratio:.1f}x 平均比）")
-                elif ratio >= 1.2:
-                    score += 8 if trade_style == "day" else 5
-                    reasons.append(f"⚠️ 出来高やや増加（{ratio:.1f}x）")
-                else:
-                    reasons.append(f"➖ 出来高変化なし（{ratio:.1f}x）")
+        # =====================================================
+        # MACD
+        # =====================================================
+        ema12 = closes.ewm(span=12, adjust=False).mean()
+        ema26 = closes.ewm(span=26, adjust=False).mean()
+        macd = ema12 - ema26
+        signal = macd.ewm(span=9, adjust=False).mean()
+        
+        result.macd = round(float(macd.iloc[-1]), 2)
+        result.macd_signal = round(float(signal.iloc[-1]), 2)
+        
+        if result.macd > result.macd_signal:
+            score += 5
+            reasons.append("✅ MACDゴールデンクロス")
+
+        # =====================================================
+        # Bollinger Bands (20, 2)
+        # =====================================================
+        sma20 = closes.rolling(window=20).mean()
+        std20 = closes.rolling(window=20).std()
+        upper = sma20 + (std20 * 2)
+        lower = sma20 - (std20 * 2)
+        
+        result.bollinger_upper = round(float(upper.iloc[-1]), 2)
+        result.bollinger_lower = round(float(lower.iloc[-1]), 2)
+        
+        if cur > result.bollinger_upper:
+            reasons.append("⚠️ ボリンジャーバンド+2σ超え（過熱）")
+        elif cur < result.bollinger_lower:
+            reasons.append("✅ ボリンジャーバンド-2σ到達（自律反発期待）")
+
+        # =====================================================
+        # VWAP (Approximated for daily, or reset for intraday)
+        # =====================================================
+        # For daily data, we can use a volume-weighted moving average as an approximation
+        # For intraday, we should ideally reset daily, but here we'll do 20-period VWMA
+        typical_price = (closes + highs + lows) / 3
+        vwap = (typical_price * volumes).rolling(window=14).sum() / volumes.rolling(window=14).sum()
+        result.vwap = round(float(vwap.iloc[-1]), 2)
+
     except Exception as e:
-        reasons.append(f"テクニカル計算エラー: {str(e)}")
+        reasons.append(f"テクニカルエラー {str(e)}")
 
-    # Ensure max score stays balanced if trade_style is day
-    result.score = round(min(40.0, max(0.0, score)), 1)
+    result.score = min(40.0, max(0.0, score))
     result.reasons = reasons
     return result
-
 
 def _fundamental_unavailable() -> FundamentalResult:
     """
