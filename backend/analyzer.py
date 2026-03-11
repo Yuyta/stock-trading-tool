@@ -89,6 +89,22 @@ def analyze(request: AnalyzeRequest) -> AnalysisResult:
 
     qualitative = _score_qualitative(fund_data, request.gemini_api_key if has_gemini else None, request.trade_style)
 
+    # === マクロ環境による個別調整（追加） ===
+    per = fund_data.get("per") if fund_data else None
+    is_growth = per is not None and per > 30
+    
+    if is_growth:
+        if macro.us10y is not None and macro.us10y > 4.5:
+            fundamental.sub_total -= 5
+            fundamental.reasons.append(f"❌ マクロ影響: 米10年金利({macro.us10y:.2f}%)高止まりによるグロース株減点")
+        if macro.nasdaq_below_ma75:
+            fundamental.sub_total -= 5
+            fundamental.reasons.append("❌ マクロ影響: NASDAQの75日線割れによるグロース環境悪化")
+            
+    if jp_stock and macro.usdjpy_trend > 2.0:
+        fundamental.sub_total += 5
+        fundamental.reasons.append(f"✅ マクロ影響: USD/JPY急騰(+{macro.usdjpy_trend:.1f}%)による円安メリット加点")
+
     # === Total Score & Max Score ===
     total = technical.score + qualitative.score + fundamental.sub_total
     max_score = 40 + qualitative.max_score + fundamental.max_score  # Technical(40) + Qualitative + Fundamental
@@ -116,6 +132,16 @@ def analyze(request: AnalyzeRequest) -> AnalysisResult:
     current_price = float(price_df["Close"].iloc[-1])
     high_60d = float(price_df["Close"].tail(60).max())
     
+    warnings_list = []
+    
+    # 時価総額チェック
+    market_cap = fund_data.get("market_cap") if fund_data else None
+    if market_cap:
+        if jp_stock and market_cap < 10_000_000_000:
+            warnings_list.append("⚠️ 時価総額100億円未満のため、ボラティリティリスクが高めです。")
+        elif not jp_stock and market_cap < 100_000_000:
+            warnings_list.append("⚠️ 小型株のため、ボラティリティリスクが高めです。")
+    
     if request.trade_style == "day":
         risk = RiskInfo(
             liquidity_ok=liquidity_ok,
@@ -124,6 +150,7 @@ def analyze(request: AnalyzeRequest) -> AnalysisResult:
             trailing_stop_base_label="損切り目安(−2%)",
             trailing_stop_high=round(high_60d * 0.97, 2),
             trailing_stop_high_label="高値から−3%",
+            warnings=warnings_list
         )
     else:
         risk = RiskInfo(
@@ -133,6 +160,7 @@ def analyze(request: AnalyzeRequest) -> AnalysisResult:
             trailing_stop_base_label="損切り目安(−7%)",
             trailing_stop_high=round(high_60d * 0.90, 2),
             trailing_stop_high_label="高値から−10%",
+            warnings=warnings_list
         )
 
     # === Build Chart Data ===
@@ -202,6 +230,53 @@ def _analyze_macro() -> MacroResult:
         ma75 = float(nk.rolling(75).mean().iloc[-1])
         result.market_below_ma75 = float(nk.iloc[-1]) < ma75
 
+    # US10Y
+    us10y = data.get("us10y")
+    if us10y is not None and len(us10y) > 0:
+        result.us10y = round(float(us10y.iloc[-1]), 3)
+
+    # USD/JPY
+    usdjpy = data.get("usdjpy")
+    if usdjpy is not None and len(usdjpy) >= 2:
+        curr = float(usdjpy.iloc[-1])
+        prev = float(usdjpy.iloc[-2])
+        if prev > 0:
+            result.usdjpy_trend = round((curr / prev - 1) * 100, 2)
+
+    # NASDAQ
+    nq = data.get("nasdaq")
+    if nq is not None and len(nq) >= 75:
+        nq_ma75 = float(nq.rolling(75).mean().iloc[-1])
+        result.nasdaq_below_ma75 = float(nq.iloc[-1]) < nq_ma75
+
+    # Sector Rotation
+    # For US stocks: SPY is baseline, XLK, XLF, XLE, XLY are sectors.
+    # For JP stocks: TOPIX is baseline, jp_bank, jp_trade, jp_auto, jp_semi are sectors.
+    spy = data.get("spy")
+    spy_perf = (float(spy.iloc[-1]) / float(spy.iloc[-20]) - 1) if spy is not None and len(spy) >= 20 else 0
+    us_sectors = {"XLK": "xlk", "XLF": "xlf", "XLE": "xle", "XLY": "xly"}
+    
+    topix = data.get("topix")
+    topix_perf = (float(topix.iloc[-1]) / float(topix.iloc[-20]) - 1) if topix is not None and len(topix) >= 20 else 0
+    jp_sectors = {"銀行": "jp_bank", "商社": "jp_trade", "自動車": "jp_auto", "半導体": "jp_semi"}
+
+    sectors_perf = {}
+    # Combine US sectors
+    for name, k in us_sectors.items():
+        sec = data.get(k)
+        if sec is not None and len(sec) >= 20:
+            sectors_perf[name] = (float(sec.iloc[-1]) / float(sec.iloc[-20]) - 1) - spy_perf
+
+    # Combine JP sectors
+    for name, k in jp_sectors.items():
+        sec = data.get(k)
+        if sec is not None and len(sec) >= 20:
+            sectors_perf[name] = (float(sec.iloc[-1]) / float(sec.iloc[-20]) - 1) - topix_perf
+            
+    if sectors_perf:
+        result.strong_sectors = [k for k, outperf in sectors_perf.items() if outperf > 0.02]
+        result.weak_sectors = [k for k, outperf in sectors_perf.items() if outperf < -0.02]
+
     return result
 
 
@@ -234,6 +309,41 @@ def _analyze_technical(price_df: pd.DataFrame, trade_style: str) -> TechnicalRes
         result.golden_cross = gc
         result.above_ema75 = above
 
+        # MACD (12, 26, 9)
+        ema12 = closes.ewm(span=12, adjust=False).mean()
+        ema26 = closes.ewm(span=26, adjust=False).mean()
+        macd = ema12 - ema26
+        signal_line = macd.ewm(span=9, adjust=False).mean()
+        macd_cur = float(macd.iloc[-1])
+        sig_cur = float(signal_line.iloc[-1])
+        if len(macd) >= 2:
+            macd_cross_up = float(macd.iloc[-2]) < float(signal_line.iloc[-2]) and macd_cur > sig_cur
+        else:
+            macd_cross_up = False
+
+        result.macd = round(macd_cur, 2)
+        result.macd_signal = round(sig_cur, 2)
+
+        # VWAP
+        if volumes is not None:
+            typical_price = (highs + lows + closes) / 3
+            vwap = (typical_price * volumes).cumsum() / volumes.cumsum()
+            vwap_cur = float(vwap.iloc[-1])
+            is_above_vwap = cur > vwap_cur
+        else:
+            vwap_cur = cur
+            is_above_vwap = False
+        
+        result.vwap = round(vwap_cur, 2)
+
+        # Bollinger Bands (20, 2)
+        std20 = closes.rolling(20).std()
+        upper_band = ema20 + (std20 * 2)
+        lower_band = ema20 - (std20 * 2)
+        if len(upper_band) > 0 and not pd.isna(upper_band.iloc[-1]):
+            result.bollinger_upper = round(float(upper_band.iloc[-1]), 2)
+            result.bollinger_lower = round(float(lower_band.iloc[-1]), 2)
+
         # Modifying scoring based on trade_style
         if trade_style == "day":
             # In Day Trading, short-term crossover (ema5 & ema20) is much more important than ema75
@@ -262,8 +372,14 @@ def _analyze_technical(price_df: pd.DataFrame, trade_style: str) -> TechnicalRes
                 elif current_atr_pct < 0.5:
                     score -= 5
                     reasons.append(f"❌ ボラティリティ不足 (ATR: {current_atr_pct:.1f}%)")
+                    
             except Exception:
                 pass
+                
+            # VWAPブレイク
+            if is_above_vwap:
+                score += 10
+                reasons.append(f"✅ VWAPブレイク・上方推移（短期モメンタム強）")
         else:
             if gc and above:
                 score += 15
@@ -276,6 +392,13 @@ def _analyze_technical(price_df: pd.DataFrame, trade_style: str) -> TechnicalRes
                 reasons.append("⚠️ 75日EMA上方（クロス未形成）")
             else:
                 reasons.append("❌ ゴールデンクロスなし・75日EMA下方")
+                
+            if macd_cross_up:
+                score += 10
+                reasons.append("✅ MACDシグナル上抜け（トレンド転換サイン）")
+            if is_above_vwap:
+                score += 5
+                reasons.append("✅ VWAP上方推移（機関投資家平均コスト以上）")
 
         delta = closes.diff()
         gain = delta.clip(lower=0).rolling(14).mean()
@@ -405,7 +528,9 @@ def _score_fundamental(fund_data: dict, data_source: str) -> FundamentalResult:
         data_missing += 7; reasons.append("⚪ PERデータなし（スコア対象外）")
 
     if pbr:
-        if pbr <= 1.2:
+        if pbr < 1.0 and is_jp_stock:
+            val_score += 10; reasons.append(f"✅ PBR {pbr:.2f}倍（東証改革テーマ・PBR1割れ）")
+        elif pbr <= 1.2:
             val_score += 6; reasons.append(f"✅ PBR {pbr:.2f}倍（割安）")
         elif pbr <= 2.0:
             val_score += 3; reasons.append(f"⚠️ PBR {pbr:.2f}倍（普通）")
@@ -415,7 +540,9 @@ def _score_fundamental(fund_data: dict, data_source: str) -> FundamentalResult:
         data_missing += 6; reasons.append("⚪ PBRデータなし（スコア対象外）")
 
     if roe:
-        if roe >= 10:
+        if roe > 15:
+            val_score += 10; reasons.append(f"✅ ROE {roe:.1f}%（超高収益）")
+        elif roe >= 10:
             val_score += 7; reasons.append(f"✅ ROE {roe:.1f}%（高収益）")
         elif roe >= 8:
             val_score += 5; reasons.append(f"✅ ROE {roe:.1f}%（良好）")
@@ -439,12 +566,22 @@ def _score_qualitative(fund_data: dict, gemini_api_key: Optional[str], trade_sty
     result = QualitativeResult()
     headlines = [h for h in fund_data.get("news_headlines", []) if h]
 
+    news_count_24h = fund_data.get("news_count_24h", 0)
+
     if not headlines:
         result.score = 0.0
         result.max_score = 0  # no data → excluded from total
         result.data_source = "なし"
         result.reasons.append("⚪ ニュースデータなし（スコア対象外）")
         return result
+        
+    def apply_news_count_modifier(res: QualitativeResult):
+        if news_count_24h >= 4:
+            res.score = min(res.max_score, res.score + 2.0)
+            res.reasons.append(f"✅ 24時間以内のニュース急増({news_count_24h}件・短期トレンド発生)")
+        elif news_count_24h >= 2:
+            res.score = min(res.max_score, res.score + 1.0)
+            res.reasons.append(f"✅ 24時間以内のアクティブな情報発信({news_count_24h}件)")
 
     # ── WITHOUT Gemini API: keyword-based, max 7 pts ──
     if not gemini_api_key:
@@ -474,6 +611,7 @@ def _score_qualitative(fund_data: dict, gemini_api_key: Optional[str], trade_sty
 
         result.reasons.append("　　Gemini APIキーを設定するとAI詳細分析（満点10点）が利用可能")
         result.news_analyzed = True
+        apply_news_count_modifier(result)
         return result
 
     # ── WITH Gemini API: AI-powered, max 10 pts ──
@@ -542,9 +680,12 @@ def _score_qualitative(fund_data: dict, gemini_api_key: Optional[str], trade_sty
             result.sentiment = parsed.get("sentiment", "neutral")
             result.reasons.append(f"✅ Gemini AI解析: {parsed.get('reason', '')}")
             result.news_analyzed = True
+            apply_news_count_modifier(result)
         else:
             run_keyword_fallback("JSON解析失敗")
+            apply_news_count_modifier(result)
     except Exception as e:
         run_keyword_fallback(str(e))
+        apply_news_count_modifier(result)
 
     return result

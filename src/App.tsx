@@ -289,13 +289,34 @@ export default function App() {
                   <span className="metric-title">RSI (14)</span>
                   <span className="metric-value">{result.technical.rsi ?? '—'}</span>
                 </div>
+
                 <div className="metric-card">
-                  <span className="metric-title">5日EMA</span>
-                  <span className="metric-value">{result.technical.ema5?.toLocaleString() ?? '—'}</span>
+                  <span className="metric-title">MACD (Sig)</span>
+                  <span className="metric-value" style={{ fontSize: '0.9rem' }}>
+                    {result.technical.macd ?? '—'} ({result.technical.macd_signal ?? '—'})
+                  </span>
+                </div>
+                <div className="metric-card">
+                  <span className="metric-title">VWAP</span>
+                  <span className="metric-value">{result.technical.vwap?.toLocaleString() ?? '—'}</span>
                 </div>
                 <div className="metric-card">
                   <span className="metric-title">出来高比</span>
                   <span className="metric-value">{result.technical.volume_ratio != null ? `${result.technical.volume_ratio}x` : '—'}</span>
+                </div>
+                <div className="metric-card">
+                  <span className="metric-title">ボリンジャー(±2σ)</span>
+                  <span className="metric-value" style={{ fontSize: '0.85rem' }}>
+                    {result.technical.bollinger_lower != null && result.technical.bollinger_upper != null
+                      ? `${result.technical.bollinger_lower.toLocaleString()} - ${result.technical.bollinger_upper.toLocaleString()}`
+                      : '—'}
+                  </span>
+                </div>
+                <div className="metric-card">
+                  <span className="metric-title">5日/20日/75日EMA</span>
+                  <span className="metric-value" style={{ fontSize: '0.9rem' }}>
+                    {result.technical.ema5?.toLocaleString()}/<br/>{result.technical.ema20?.toLocaleString()}/<br/>{result.technical.ema75?.toLocaleString()}
+                  </span>
                 </div>
               </div>
             )}
@@ -359,12 +380,32 @@ export default function App() {
                 vixMode={result.macro.vix_mode}
                 blockReason={result.macro.block_reason}
               />
-              <div className="layer-details">
+              <div className="layer-details" style={{ flexWrap: 'wrap' }}>
                 {result.macro.vix != null && <span className="tag">VIX: {result.macro.vix}</span>}
+                {result.macro.us10y != null && <span className="tag">米10年金利: {result.macro.us10y}%</span>}
+                {result.macro.usdjpy_trend !== 0 && <span className="tag">USD/JPY: {result.macro.usdjpy_trend > 0 ? '+' : ''}{result.macro.usdjpy_trend}%</span>}
                 {result.macro.oil_sigma != null && <span className="tag">原油σ: {result.macro.oil_sigma}</span>}
                 {result.macro.gold_sigma != null && <span className="tag">金σ: {result.macro.gold_sigma}</span>}
+                {result.macro.nasdaq_below_ma75 && <span className="tag danger-tag">NASDAQ 75日線下 ⚠️</span>}
+                {result.macro.market_below_ma75 && <span className="tag danger-tag">市場 75日線下 ⚠️</span>}
                 {result.macro.commodity_alert && <span className="tag danger-tag">コモディティ急騰 ⚠️</span>}
               </div>
+
+              {/* Sector Rotation Info */}
+              {((result.macro.strong_sectors && result.macro.strong_sectors.length > 0) || (result.macro.weak_sectors && result.macro.weak_sectors.length > 0)) && (
+                <div className="layer-details" style={{ marginTop: '0.5rem', flexWrap: 'wrap' }}>
+                  {result.macro.strong_sectors && result.macro.strong_sectors.length > 0 && (
+                    <span className="tag" style={{ background: 'rgba(52, 211, 153, 0.2)', color: '#34d399', border: '1px solid rgba(52, 211, 153, 0.3)' }}>
+                      🔥 資金流入セクター: {result.macro.strong_sectors.join(', ')}
+                    </span>
+                  )}
+                  {result.macro.weak_sectors && result.macro.weak_sectors.length > 0 && (
+                    <span className="tag" style={{ background: 'rgba(248, 113, 113, 0.2)', color: '#f87171', border: '1px solid rgba(248, 113, 113, 0.3)' }}>
+                      ❄️ 資金流出セクター: {result.macro.weak_sectors.join(', ')}
+                    </span>
+                  )}
+                </div>
+              )}
 
               {/* Layer 2: Fundamental */}
               {result.fundamental && (
@@ -441,6 +482,15 @@ export default function App() {
               {result.risk && (
                 <div className="risk-section">
                   <span className="metric-title">🛡 リスク管理</span>
+
+                  {result.risk.warnings && result.risk.warnings.length > 0 && (
+                    <ul className="reason-list" style={{ marginBottom: '0.75rem', marginTop: '0.5rem' }}>
+                      {result.risk.warnings.map((w, i) => (
+                        <li key={`risk-warn-${i}`} style={{ color: 'var(--danger)' }}>{w}</li>
+                      ))}
+                    </ul>
+                  )}
+
                   <div className="kv-grid">
                     {result.risk.liquidity_ok != null && (
                       <>

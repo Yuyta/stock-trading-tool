@@ -39,7 +39,12 @@ def fetch_price_history(symbol: str, timeframe: str = "1d") -> Optional[pd.DataF
 
 def fetch_macro_data() -> Dict[str, Any]:
     result: Dict[str, Any] = {}
-    items = {"vix": "^VIX", "wti": "CL=F", "gold": "GC=F", "nikkei": "^N225"}
+    items = {
+        "vix": "^VIX", "wti": "CL=F", "gold": "GC=F", "nikkei": "^N225",
+        "us10y": "^TNX", "usdjpy": "JPY=X", "nasdaq": "^IXIC",
+        "spy": "SPY", "xlk": "XLK", "xlf": "XLF", "xle": "XLE", "xly": "XLY",
+        "jp_bank": "1615.T", "jp_trade": "1629.T", "jp_auto": "1622.T", "jp_semi": "2644.T", "topix": "1306.T"
+    }
     
     import concurrent.futures
     
@@ -140,6 +145,12 @@ def _fetch_yfinance_fundamentals(symbol: str) -> Dict[str, Any]:
             pass
 
         # -------------------------
+        # その他の基本情報
+        # -------------------------
+        result["market_cap"] = info.get("marketCap")
+        result["sector"] = info.get("sector")
+
+        # -------------------------
         # ニュース
         # -------------------------
         try:
@@ -150,6 +161,10 @@ def _fetch_yfinance_fundamentals(symbol: str) -> Dict[str, Any]:
                     or n.get("title", "")
                     for n in news[:10]
                 ]
+                import time
+                now = time.time()
+                recent_count = sum(1 for n in news if now - n.get("providerPublishTime", 0) <= 86400)
+                result["news_count_24h"] = recent_count
         except Exception:
             pass
     except Exception:
@@ -235,12 +250,25 @@ def _fetch_jquants(symbol: str, refresh_token: str) -> Dict[str, Any]:
     try:
         sym_yf = normalize_jp_symbol(symbol)
         ticker = yf.Ticker(sym_yf)
+        
+        info = {}
+        try:
+            info = ticker.get_info()
+        except:
+            pass
+        result["market_cap"] = info.get("marketCap")
+        result["sector"] = info.get("sector")
+        
         news = ticker.news
         if news:
             result["news_headlines"] = [
                 n.get("content", {}).get("title", "") or n.get("title", "")
                 for n in news[:10]
             ]
+            import time
+            now = time.time()
+            recent_count = sum(1 for n in news if now - n.get("providerPublishTime", 0) <= 86400)
+            result["news_count_24h"] = recent_count
     except Exception:
         pass
     return result

@@ -20,8 +20,14 @@ export interface MacroResult {
     gold_sigma?: number;
     commodity_alert: boolean;
     market_below_ma75?: boolean;
+    us10y?: number;
+    usdjpy_trend: number;
+    nasdaq_below_ma75?: boolean;
+    strong_sectors: string[];
+    weak_sectors: string[];
     passed: boolean;
     block_reason?: string;
+    warnings: string[];
 }
 
 export interface FundamentalResult {
@@ -46,6 +52,11 @@ export interface TechnicalResult {
     golden_cross: boolean;
     above_ema75: boolean;
     rsi?: number;
+    bollinger_upper?: number;
+    bollinger_lower?: number;
+    macd?: number;
+    macd_signal?: number;
+    vwap?: number;
     volume_surge: boolean;
     volume_ratio?: number;
     reasons: string[];
@@ -67,6 +78,7 @@ export interface RiskInfo {
     trailing_stop_base_label: string;
     trailing_stop_high?: number;
     trailing_stop_high_label: string;
+    warnings: string[];
 }
 
 export interface AnalysisResult {

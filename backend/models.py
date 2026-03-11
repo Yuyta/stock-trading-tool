@@ -8,6 +8,7 @@ class AnalyzeRequest(BaseModel):
     trade_style: str = "swing"  # "swing" (中長期) or "day" (デイトレ・信用)
     jquants_refresh_token: Optional[str] = None
     gemini_api_key: Optional[str] = None
+    is_jp_stock: bool = False
 
 class ChartDataPoint(BaseModel):
     time: str
@@ -21,8 +22,14 @@ class MacroResult(BaseModel):
     gold_sigma: Optional[float] = None
     commodity_alert: bool = False
     market_below_ma75: Optional[bool] = None
+    us10y: Optional[float] = None
+    usdjpy_trend: float = 0
+    nasdaq_below_ma75: Optional[bool] = None
+    strong_sectors: List[str] = []
+    weak_sectors: List[str] = []
     passed: bool = True
     block_reason: Optional[str] = None
+    warnings: List[str] = []
 
 
 class FundamentalResult(BaseModel):
@@ -47,6 +54,11 @@ class TechnicalResult(BaseModel):
     golden_cross: bool = False
     above_ema75: bool = False
     rsi: Optional[float] = None
+    bollinger_upper: Optional[float] = None
+    bollinger_lower: Optional[float] = None
+    macd: Optional[float] = None
+    macd_signal: Optional[float] = None
+    vwap: Optional[float] = None
     volume_surge: bool = False
     volume_ratio: Optional[float] = None
     reasons: List[str] = []
@@ -68,6 +80,7 @@ class RiskInfo(BaseModel):
     trailing_stop_base_label: str = "損切り目安(−7%)"
     trailing_stop_high: Optional[float] = None
     trailing_stop_high_label: str = "高値から−10%"
+    warnings: List[str] = []
 
 
 class AnalysisResult(BaseModel):
