@@ -58,30 +58,36 @@ def analyze(request: AnalyzeRequest) -> AnalysisResult:
     # === Layer 2: Fundamental ===
     if request.trade_style == "day":
         fundamental = _fundamental_unavailable_day()
-    elif jp_stock and not has_jquants:
-        # No J-Quants key for JP stock → skip API-based fundamental scoring
-        fundamental = _fundamental_unavailable()
     else:
         fund_data = fetch_fundamentals(symbol, request.jquants_refresh_token)
         
         # どのソースからデータが取れたかを詳細に判定
         sources = []
         is_jq = bool(fund_data.get("_jq_success"))
-        has_metrics = any(fund_data.get(k) is not None for k in ["per", "pbr", "roe"])
+        # 財務メトリクス（PER, PBR, ROE, 成長率）のいずれかがあるか
+        has_metrics = any(fund_data.get(k) is not None for k in ["per", "pbr", "roe", "op_income_growth_avg"])
         
         if is_jq:
             sources.append("J-Quants")
-        if has_metrics and (not is_jq or not has_jquants): 
-            # もしJQでも取れたがyfからも取れたか、JQがない場合にyfが成功していれば表示
-            if "yfinance" not in sources:
-                sources.append("yfinance")
         
+        if has_metrics:
+            if not is_jq:
+                sources.append("yfinance")
+            elif not has_jquants: # 理論上ここには来ないが念のため
+                sources.append("yfinance")
+
         if not sources:
-            data_source = "不明 / 取得不可"
+            if jp_stock and not has_jquants:
+                # どのソースからも取れず、J-Quantsも未設定の場合のみ「キーが必要」を表示
+                fundamental = _fundamental_unavailable()
+            else:
+                fundamental = _score_fundamental(fund_data, "不明 / 取得不可")
         else:
             data_source = " + ".join(sources)
-            
-        fundamental = _score_fundamental(fund_data, data_source)
+            fundamental = _score_fundamental(fund_data, data_source)
+            # 日本株でJ-Quantsがない場合、yfinanceでの分析結果に補足を追加
+            if jp_stock and not has_jquants:
+                fundamental.reasons.append("💡 J-Quantsキーを設定するとより詳細・正確な財務分析が可能になります")
 
     # === Layer 4: Qualitative (news sentiment) ===
     if fund_data is None:
