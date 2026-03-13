@@ -152,9 +152,9 @@ def analyze(request: AnalyzeRequest) -> AnalysisResult:
         risk = RiskInfo(
             liquidity_ok=liquidity_ok,
             avg_daily_volume=float(avg_vol) if avg_vol is not None else None,
-            trailing_stop_base=round(current_price * 0.98, 2),
+            trailing_stop_base=round(float(current_price * 0.98), 2),
             trailing_stop_base_label="損切り目安(−2%)",
-            trailing_stop_high=round(high_60d * 0.97, 2),
+            trailing_stop_high=round(float(high_60d * 0.97), 2),
             trailing_stop_high_label="高値から−3%",
             warnings=warnings_list
         )
@@ -162,9 +162,9 @@ def analyze(request: AnalyzeRequest) -> AnalysisResult:
         risk = RiskInfo(
             liquidity_ok=liquidity_ok,
             avg_daily_volume=float(avg_vol) if avg_vol is not None else None,
-            trailing_stop_base=round(current_price * 0.93, 2),
+            trailing_stop_base=round(float(current_price * 0.93), 2),
             trailing_stop_base_label="損切り目安(−7%)",
-            trailing_stop_high=round(high_60d * 0.90, 2),
+            trailing_stop_high=round(float(high_60d * 0.90), 2),
             trailing_stop_high_label="高値から−10%",
             warnings=warnings_list
         )
@@ -213,8 +213,8 @@ def analyze(request: AnalyzeRequest) -> AnalysisResult:
     return AnalysisResult(
         symbol=symbol,
         signal=signal,
-        total_score=round(total, 1),
-        max_score=round(max_score, 1),
+        total_score=round(float(total), 1),
+        max_score=round(float(max_score), 1),
         analysis_mode=analysis_mode,
         macro=macro,
         fundamental=fundamental,
@@ -407,8 +407,9 @@ def _analyze_technical(price_df: pd.DataFrame, trade_style: str) -> TechnicalRes
         gain = delta.clip(lower=0).rolling(14).mean()
         loss = (-delta).clip(lower=0).rolling(14).mean()
         rs = gain / (loss + 1e-9)
-        rsi = float((100 - 100 / (1 + rs)).iloc[-1])
-        result.rsi = round(rsi, 1)
+        rsi_ser = 100 - 100 / (1 + rs)
+        rsi = float(rsi_ser.iloc[-1])
+        result.rsi = round(float(rsi), 1)
 
         if 40 <= rsi <= 65:
             score += 10

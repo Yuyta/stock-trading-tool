@@ -134,6 +134,8 @@ def _fetch_yfinance_fundamentals(symbol: str) -> Dict[str, Any]:
 
                         if prev != 0:
                             growth = (vals[i] - prev) / abs(prev) * 100
+                            # 異常値保護: 極端な伸び率（IPO直後や特殊要因）を±500%に制限
+                            growth = max(-500.0, min(500.0, growth))
                             growths.append(growth)
 
                     if growths:
@@ -237,10 +239,13 @@ def _fetch_jquants(symbol: str, refresh_token: str) -> Dict[str, Any]:
                             op_vals.append(v)
                     
                     if len(op_vals) >= 2:
-                        growths = [
-                            (op_vals[i] - op_vals[i-1]) / abs(op_vals[i-1]) * 100
-                            for i in range(1, len(op_vals)) if op_vals[i-1] != 0
-                        ]
+                        growths = []
+                        for i in range(1, len(op_vals)):
+                            if op_vals[i-1] != 0:
+                                g = (op_vals[i] - op_vals[i-1]) / abs(op_vals[i-1]) * 100
+                                # 異常値保護: ±500%に制限
+                                g = max(-500.0, min(500.0, g))
+                                growths.append(g)
                         if growths:
                             # Average of last 3 periods if available
                             result["op_income_growth_avg"] = float(np.mean(growths[-3:]))
