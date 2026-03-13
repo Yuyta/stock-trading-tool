@@ -5,7 +5,7 @@ import {
   AlertCircle, ChevronRight, Server
 } from 'lucide-react';
 import {
-  ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid
+  ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid, Line
 } from 'recharts';
 import { AnalysisResult, AppSettings } from './types';
 import { SettingsModal } from './SettingsModal';
@@ -239,7 +239,7 @@ export default function App() {
               <Activity className="card-icon" />
               <span>価格チャート（参考）</span>
             </div>
-            <div className="chart-placeholder" style={{ height: '220px', padding: '10px 0', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <div className="chart-placeholder" style={{ height: '400px', padding: '10px 0', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               {result?.chart_data && result.chart_data.length > 0 ? (
                 <ResponsiveContainer width="100%" height="100%">
                   <AreaChart data={result.chart_data} margin={{ top: 5, right: 0, left: -20, bottom: 0 }}>
@@ -270,6 +270,13 @@ export default function App() {
                       labelStyle={{ color: 'var(--text-muted)' }}
                     />
                     <Area type="monotone" dataKey="price" stroke={getSignalColor(result.signal)} fillOpacity={1} fill="url(#colorPrice)" />
+                    
+                    {/* 指標オーバーレイ */}
+                    <Line type="monotone" dataKey="ema5" stroke="#fcd34d" strokeWidth={1} dot={false} />
+                    <Line type="monotone" dataKey="ema20" stroke="#fb923c" strokeWidth={1} dot={false} />
+                    <Line type="monotone" dataKey="ema75" stroke="#a855f7" strokeWidth={1} dot={false} />
+                    <Line type="monotone" dataKey="bollinger_upper" stroke="rgba(255,255,255,0.2)" strokeDasharray="3 3" dot={false} />
+                    <Line type="monotone" dataKey="bollinger_lower" stroke="rgba(255,255,255,0.2)" strokeDasharray="3 3" dot={false} />
                   </AreaChart>
                 </ResponsiveContainer>
               ) : (

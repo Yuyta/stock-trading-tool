@@ -11,6 +11,11 @@ export interface AnalyzeRequest {
 export interface ChartDataPoint {
     time: string;
     price: number;
+    ema5?: number;
+    ema20?: number;
+    ema75?: number;
+    bollinger_upper?: number;
+    bollinger_lower?: number;
 }
 
 export interface MacroResult {

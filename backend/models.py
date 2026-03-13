@@ -13,6 +13,12 @@ class AnalyzeRequest(BaseModel):
 class ChartDataPoint(BaseModel):
     time: str
     price: float
+    # 可視化用指標 (Overlay)
+    ema5: Optional[float] = None
+    ema20: Optional[float] = None
+    ema75: Optional[float] = None
+    bollinger_upper: Optional[float] = None
+    bollinger_lower: Optional[float] = None
 
 
 class MacroResult(BaseModel):

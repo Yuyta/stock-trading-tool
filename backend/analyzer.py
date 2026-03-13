@@ -173,14 +173,42 @@ def analyze(request: AnalyzeRequest) -> AnalysisResult:
     from models import ChartDataPoint
     chart_data = []
     if price_df is not None and not price_df.empty:
-        # Limit to max 100 points for frontend rendering
-        df_chart = price_df.tail(100)
+        # 指標の計算 (チャート表示用)
+        closes = price_df["Close"]
+        ema5_ser = closes.ewm(span=5, adjust=False).mean()
+        ema20_ser = closes.ewm(span=20, adjust=False).mean()
+        ema75_ser = closes.ewm(span=75, adjust=False).mean()
+        sma20 = closes.rolling(window=20).mean()
+        std20 = closes.rolling(window=20).std()
+        upper_ser = sma20 + (std20 * 2)
+        lower_ser = sma20 - (std20 * 2)
+
+        # 結合して tail を取得
+        df_all = pd.DataFrame({
+            "Close": closes,
+            "ema5": ema5_ser,
+            "ema20": ema20_ser,
+            "ema75": ema75_ser,
+            "upper": upper_ser,
+            "lower": lower_ser
+        })
+        
+        df_chart = df_all.tail(100)
         for idx, row in df_chart.iterrows():
             if request.timeframe in ["1m", "2m", "5m", "15m", "30m", "60m", "90m", "1h"]:
                 time_str = idx.strftime("%m-%d %H:%M")
             else:
                 time_str = idx.strftime("%m-%d")
-            chart_data.append(ChartDataPoint(time=time_str, price=round(float(row["Close"]), 2)))
+            
+            chart_data.append(ChartDataPoint(
+                time=time_str, 
+                price=round(float(row["Close"]), 2),
+                ema5=round(float(row["ema5"]), 2) if not pd.isna(row["ema5"]) else None,
+                ema20=round(float(row["ema20"]), 2) if not pd.isna(row["ema20"]) else None,
+                ema75=round(float(row["ema75"]), 2) if not pd.isna(row["ema75"]) else None,
+                bollinger_upper=round(float(row["upper"]), 2) if not pd.isna(row["upper"]) else None,
+                bollinger_lower=round(float(row["lower"]), 2) if not pd.isna(row["lower"]) else None,
+            ))
 
     return AnalysisResult(
         symbol=symbol,
@@ -585,17 +613,22 @@ def _score_qualitative(fund_data: dict, gemini_api_key: Optional[str], trade_sty
         pos_kw = ["増益", "上方修正", "最高益", "好決算", "growth", "upgrade",
                   "record", "beat", "strong", "dividend", "buyback"]
 
+        hits_neg = [kw for kw in neg_kw if any(kw.lower() in h.lower() for h in headlines)]
+        hits_pos = [kw for kw in pos_kw if any(kw.lower() in h.lower() for h in headlines)]
+        
         neg = sum(1 for h in headlines for kw in neg_kw if kw.lower() in h.lower())
         pos = sum(1 for h in headlines for kw in pos_kw if kw.lower() in h.lower())
 
         if neg > pos:
             result.score = max(0.0, 5.0 - neg * 1.5)
             result.sentiment = "negative"
-            result.reasons.append(f"⚠️ ネガティブキーワード検知（{neg}件）")
+            kw_str = ", ".join(hits_neg)
+            result.reasons.append(f"⚠️ ネガティブキーワード検知: {kw_str}（{neg}件）")
         elif pos > 0:
             result.score = min(7.0, 5.0 + pos * 0.8)
             result.sentiment = "positive"
-            result.reasons.append(f"✅ ポジティブキーワード検知（{pos}件）")
+            kw_str = ", ".join(hits_pos)
+            result.reasons.append(f"✅ ポジティブキーワード検知: {kw_str}（{pos}件）")
         else:
             result.score = 4.0
             result.sentiment = "neutral"
@@ -619,16 +652,21 @@ def _score_qualitative(fund_data: dict, gemini_api_key: Optional[str], trade_sty
     def run_keyword_fallback(error_msg: str):
         result.data_source = "キーワード(エラー切替)"
         result.max_score = 7
+        hits_neg = [kw for kw in neg_kw if any(kw.lower() in h.lower() for h in headlines)]
+        hits_pos = [kw for kw in pos_kw if any(kw.lower() in h.lower() for h in headlines)]
+        
         neg = sum(1 for h in headlines for kw in neg_kw if kw.lower() in h.lower())
         pos = sum(1 for h in headlines for kw in pos_kw if kw.lower() in h.lower())
         if neg > pos:
             result.score = max(0.0, 5.0 - neg * 1.5)
             result.sentiment = "negative"
-            result.reasons.append(f"⚠️ API制限のためキーワード判定（{neg}件）")
+            kw_str = ", ".join(hits_neg)
+            result.reasons.append(f"⚠️ API制限のためキーワード判定: {kw_str}（{neg}件）")
         elif pos > 0:
             result.score = min(7.0, 5.0 + pos * 0.8)
             result.sentiment = "positive"
-            result.reasons.append(f"✅ API制限のためキーワード判定（{pos}件）")
+            kw_str = ", ".join(hits_pos)
+            result.reasons.append(f"✅ API制限のためキーワード判定: {kw_str}（{pos}件）")
         else:
             result.score = 4.0
             result.sentiment = "neutral"
