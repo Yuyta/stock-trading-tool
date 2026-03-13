@@ -504,18 +504,18 @@ def _score_fundamental(fund_data: dict, data_source: str) -> FundamentalResult:
     growth_score = 0.0
     val_score = 0.0
 
-    # --- Growth (0–30 pts) ---
+    # --- Growth (0–20 pts) ---
     growth = fund_data.get("op_income_growth_avg")
     result.op_income_growth_avg = round(growth, 1) if growth is not None else None
     if growth is not None:
         if growth >= 15:
-            growth_score = 30
+            growth_score = 20
             reasons.append(f"✅ 営業利益成長率 {growth:.1f}%（優秀）")
         elif growth >= 10:
-            growth_score = 25
+            growth_score = 15
             reasons.append(f"✅ 営業利益成長率 {growth:.1f}%（良好）")
         elif growth >= 5:
-            growth_score = 15
+            growth_score = 10
             reasons.append(f"⚠️ 営業利益成長率 {growth:.1f}%（普通）")
         elif growth >= 0:
             growth_score = 5
@@ -550,11 +550,11 @@ def _score_fundamental(fund_data: dict, data_source: str) -> FundamentalResult:
 
     if pbr:
         if pbr < 1.0 and is_jp_stock:
-            val_score += 10; reasons.append(f"✅ PBR {pbr:.2f}倍（東証改革テーマ・PBR1割れ）")
+            val_score += 6; reasons.append(f"✅ PBR {pbr:.2f}倍（東証改革テーマ・PBR1割れ）")
         elif pbr <= 1.2:
-            val_score += 6; reasons.append(f"✅ PBR {pbr:.2f}倍（割安）")
+            val_score += 5; reasons.append(f"✅ PBR {pbr:.2f}倍（割安）")
         elif pbr <= 2.0:
-            val_score += 3; reasons.append(f"⚠️ PBR {pbr:.2f}倍（普通）")
+            val_score += 2; reasons.append(f"⚠️ PBR {pbr:.2f}倍（普通）")
         else:
             reasons.append(f"❌ PBR {pbr:.2f}倍（割高）")
     else:
@@ -562,20 +562,20 @@ def _score_fundamental(fund_data: dict, data_source: str) -> FundamentalResult:
 
     if roe:
         if roe > 15:
-            val_score += 10; reasons.append(f"✅ ROE {roe:.1f}%（超高収益）")
+            val_score += 7; reasons.append(f"✅ ROE {roe:.1f}%（超高収益）")
         elif roe >= 10:
-            val_score += 7; reasons.append(f"✅ ROE {roe:.1f}%（高収益）")
+            val_score += 5; reasons.append(f"✅ ROE {roe:.1f}%（高収益）")
         elif roe >= 8:
-            val_score += 5; reasons.append(f"✅ ROE {roe:.1f}%（良好）")
+            val_score += 3; reasons.append(f"✅ ROE {roe:.1f}%（良好）")
         elif roe >= 5:
-            val_score += 2; reasons.append(f"⚠️ ROE {roe:.1f}%（普通）")
+            val_score += 1; reasons.append(f"⚠️ ROE {roe:.1f}%（普通）")
         else:
             reasons.append(f"❌ ROE {roe:.1f}%（低収益）")
     else:
         data_missing += 7; reasons.append("⚪ ROEデータなし（スコア対象外）")
 
-    # Max score = 50 minus the portions where data was missing
-    result.max_score = 50 - data_missing
+    # Max score = 40 minus the portions where data was missing
+    result.max_score = 40 - data_missing
     result.growth_score = round(growth_score, 1)
     result.valuation_score = round(val_score, 1)
     result.sub_total = round(growth_score + val_score, 1)
@@ -598,16 +598,16 @@ def _score_qualitative(fund_data: dict, gemini_api_key: Optional[str], trade_sty
         
     def apply_news_count_modifier(res: QualitativeResult):
         if news_count_24h >= 4:
-            res.score = min(res.max_score, res.score + 2.0)
+            res.score = min(res.max_score, res.score + 4.0)
             res.reasons.append(f"✅ 24時間以内のニュース急増({news_count_24h}件・短期トレンド発生)")
         elif news_count_24h >= 2:
-            res.score = min(res.max_score, res.score + 1.0)
+            res.score = min(res.max_score, res.score + 2.0)
             res.reasons.append(f"✅ 24時間以内のアクティブな情報発信({news_count_24h}件)")
 
-    # ── WITHOUT Gemini API: keyword-based, max 7 pts ──
+    # ── WITHOUT Gemini API: keyword-based, max 15 pts ──
     if not gemini_api_key:
         result.data_source = "キーワード"
-        result.max_score = 7  # cap because keyword analysis is less reliable
+        result.max_score = 15  # 判定の重みを強化
 
         neg_kw = ["不祥事", "下方修正", "赤字", "倒産", "scandal", "fraud", "bankruptcy",
                   "war", "downgrade", "warning", "recall", "investigation"]
@@ -621,28 +621,30 @@ def _score_qualitative(fund_data: dict, gemini_api_key: Optional[str], trade_sty
         pos = sum(1 for h in headlines for kw in pos_kw if kw.lower() in h.lower())
 
         if neg > pos:
-            result.score = max(0.0, 5.0 - neg * 1.5)
+            # 基準10から減算
+            result.score = max(0.0, 10.0 - neg * 3.0)
             result.sentiment = "negative"
             kw_str = ", ".join(hits_neg)
             result.reasons.append(f"⚠️ ネガティブキーワード検知: {kw_str}（{neg}件）")
         elif pos > 0:
-            result.score = min(7.0, 5.0 + pos * 0.8)
+            # 基準10から加算
+            result.score = min(15.0, 10.0 + pos * 1.5)
             result.sentiment = "positive"
             kw_str = ", ".join(hits_pos)
             result.reasons.append(f"✅ ポジティブキーワード検知: {kw_str}（{pos}件）")
         else:
-            result.score = 4.0
+            result.score = 8.0
             result.sentiment = "neutral"
             result.reasons.append("➖ 中立的なニュース")
 
-        result.reasons.append("　　Gemini APIキーを設定するとAI詳細分析（満点10点）が利用可能")
+        result.reasons.append("　　Gemini APIキーを設定するとAI詳細分析（満点20点）が利用可能")
         result.news_analyzed = True
         apply_news_count_modifier(result)
         return result
 
-    # ── WITH Gemini API: AI-powered, max 10 pts ──
+    # ── WITH Gemini API: AI-powered, max 20 pts ──
     result.data_source = "Gemini AI"
-    result.max_score = 10
+    result.max_score = 20
     
     # Pre-define keywords for fallback in case of API error
     neg_kw = ["不祥事", "下方修正", "赤字", "倒産", "scandal", "fraud", "bankruptcy",
@@ -652,24 +654,24 @@ def _score_qualitative(fund_data: dict, gemini_api_key: Optional[str], trade_sty
     
     def run_keyword_fallback(error_msg: str):
         result.data_source = "キーワード(エラー切替)"
-        result.max_score = 7
+        result.max_score = 15
         hits_neg = [kw for kw in neg_kw if any(kw.lower() in h.lower() for h in headlines)]
         hits_pos = [kw for kw in pos_kw if any(kw.lower() in h.lower() for h in headlines)]
         
         neg = sum(1 for h in headlines for kw in neg_kw if kw.lower() in h.lower())
         pos = sum(1 for h in headlines for kw in pos_kw if kw.lower() in h.lower())
         if neg > pos:
-            result.score = max(0.0, 5.0 - neg * 1.5)
+            result.score = max(0.0, 10.0 - neg * 3.0)
             result.sentiment = "negative"
             kw_str = ", ".join(hits_neg)
             result.reasons.append(f"⚠️ API制限のためキーワード判定: {kw_str}（{neg}件）")
         elif pos > 0:
-            result.score = min(7.0, 5.0 + pos * 0.8)
+            result.score = min(15.0, 10.0 + pos * 1.5)
             result.sentiment = "positive"
             kw_str = ", ".join(hits_pos)
             result.reasons.append(f"✅ API制限のためキーワード判定: {kw_str}（{pos}件）")
         else:
-            result.score = 4.0
+            result.score = 8.0
             result.sentiment = "neutral"
             result.reasons.append("➖ API制限のためキーワード判定（中立）")
         result.reasons.append(f"エラー詳細: {error_msg[:40]}...")
@@ -707,7 +709,8 @@ def _score_qualitative(fund_data: dict, gemini_api_key: Optional[str], trade_sty
         m = re_mod.search(r'\{.*\}', resp.text, re_mod.DOTALL)
         if m:
             parsed = json.loads(m.group())
-            result.score = float(max(0, min(10, parsed.get("score", 5))))
+            # 0-10のAIスコアを2倍にして20点満点化
+            result.score = float(max(0, min(10, parsed.get("score", 5)))) * 2.0
             result.sentiment = parsed.get("sentiment", "neutral")
             result.reasons.append(f"✅ Gemini AI解析: {parsed.get('reason', '')}")
             result.news_analyzed = True
