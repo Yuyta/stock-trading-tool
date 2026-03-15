@@ -5,7 +5,7 @@ import {
   AlertCircle, ChevronRight, Server
 } from 'lucide-react';
 import {
-  ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid, Line
+  ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid, Line, Legend
 } from 'recharts';
 import { AnalysisResult, AppSettings } from './types';
 import { SettingsModal } from './SettingsModal';
@@ -252,14 +252,14 @@ export default function App() {
                     <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
                     <XAxis
                       dataKey="time"
-                      tick={{ fill: 'var(--text-muted)', fontSize: 11 }}
+                      tick={{ fill: 'var(--text-muted)', fontSize: 10 }}
                       tickLine={false}
                       axisLine={false}
                       minTickGap={20}
                     />
                     <YAxis
                       domain={['auto', 'auto']}
-                      tick={{ fill: 'var(--text-muted)', fontSize: 11 }}
+                      tick={{ fill: 'var(--text-muted)', fontSize: 10 }}
                       tickLine={false}
                       axisLine={false}
                       tickFormatter={(val) => val.toLocaleString()}
@@ -269,14 +269,15 @@ export default function App() {
                       itemStyle={{ color: 'var(--accent-primary)' }}
                       labelStyle={{ color: 'var(--text-muted)' }}
                     />
-                    <Area type="monotone" dataKey="price" stroke={getSignalColor(result.signal)} fillOpacity={1} fill="url(#colorPrice)" />
+                    <Area type="monotone" dataKey="price" stroke={getSignalColor(result.signal)} fillOpacity={1} fill="url(#colorPrice)" name="価格" />
+                    <Legend verticalAlign="top" height={30} wrapperStyle={{ fontSize: '11px', paddingBottom: '10px' }} iconSize={10} />
                     
                     {/* 指標オーバーレイ */}
-                    <Line type="monotone" dataKey="ema5" stroke="#fcd34d" strokeWidth={1} dot={false} />
-                    <Line type="monotone" dataKey="ema20" stroke="#fb923c" strokeWidth={1} dot={false} />
-                    <Line type="monotone" dataKey="ema75" stroke="#a855f7" strokeWidth={1} dot={false} />
-                    <Line type="monotone" dataKey="bollinger_upper" stroke="rgba(255,255,255,0.2)" strokeDasharray="3 3" dot={false} />
-                    <Line type="monotone" dataKey="bollinger_lower" stroke="rgba(255,255,255,0.2)" strokeDasharray="3 3" dot={false} />
+                    <Line type="monotone" dataKey="ema5" stroke="#fcd34d" strokeWidth={2} dot={false} name="5日EMA" />
+                    <Line type="monotone" dataKey="ema20" stroke="#fb923c" strokeWidth={2} dot={false} name="20日EMA" />
+                    <Line type="monotone" dataKey="ema75" stroke="#a855f7" strokeWidth={2} dot={false} name="75日EMA" />
+                    <Line type="monotone" dataKey="bollinger_upper" stroke="rgba(255,255,255,0.3)" strokeDasharray="3 3" dot={false} name="ボリバン上限" />
+                    <Line type="monotone" dataKey="bollinger_lower" stroke="rgba(255,255,255,0.3)" strokeDasharray="3 3" dot={false} name="ボリバン下限" />
                   </AreaChart>
                 </ResponsiveContainer>
               ) : (
@@ -320,10 +321,21 @@ export default function App() {
                   </span>
                 </div>
                 <div className="metric-card">
-                  <span className="metric-title">5日/20日/75日EMA</span>
-                  <span className="metric-value" style={{ fontSize: '0.9rem' }}>
-                    {result.technical.ema5?.toLocaleString()}/<br/>{result.technical.ema20?.toLocaleString()}/<br/>{result.technical.ema75?.toLocaleString()}
-                  </span>
+                  <span className="metric-title">指数平滑移動平均 (EMA)</span>
+                  <div className="metric-value" style={{ fontSize: '0.75rem', display: 'flex', flexDirection: 'column', gap: '2px', marginTop: '4px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#fcd34d', flexShrink: 0 }} />
+                      <span>5日: {result.technical.ema5?.toLocaleString() ?? '—'}</span>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#fb923c', flexShrink: 0 }} />
+                      <span>20日: {result.technical.ema20?.toLocaleString() ?? '—'}</span>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#a855f7', flexShrink: 0 }} />
+                      <span>75日: {result.technical.ema75?.toLocaleString() ?? '—'}</span>
+                    </div>
+                  </div>
                 </div>
               </div>
             )}
