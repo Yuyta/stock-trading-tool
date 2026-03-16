@@ -1,8 +1,9 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
+import html2canvas from 'html2canvas';
 import {
   Activity, BarChart3, Settings as SettingsIcon, PlayCircle, RefreshCw,
   TrendingUp, TrendingDown, Minus, ShieldCheck, ShieldAlert, ShieldX,
-  AlertCircle, ChevronRight, Server
+  AlertCircle, ChevronRight, Server, Share2
 } from 'lucide-react';
 import {
   ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid, Line, Legend
@@ -72,6 +73,8 @@ export default function App() {
   const [showSettings, setShowSettings] = useState(false);
   const [settings, setSettings] = useState<AppSettings>(loadSettings);
   const [backendOnline, setBackendOnline] = useState<boolean | null>(null);
+  const chartRef = useRef<HTMLDivElement>(null);
+  const [isSharing, setIsSharing] = useState(false);
 
   useEffect(() => {
     fetch('/api/health')
@@ -109,6 +112,162 @@ export default function App() {
       setError(e instanceof Error ? e.message : '通信エラー');
     } finally {
       setIsAnalyzing(false);
+    }
+  };
+
+  const copyToClipboard = async (text: string) => {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+    
+    // Fallback for non-secure contexts (HTTP) or browsers missing Clipboard API
+    const textArea = document.createElement("textarea");
+    textArea.value = text;
+    textArea.style.position = "fixed";
+    textArea.style.left = "-9999px";
+    textArea.style.top = "0";
+    document.body.appendChild(textArea);
+    textArea.focus();
+    textArea.select();
+    try {
+      document.execCommand('copy');
+      textArea.remove();
+      return true;
+    } catch (err) {
+      textArea.remove();
+      return false;
+    }
+  };
+
+  const handleShare = async () => {
+    if (!result) return;
+    setIsSharing(true);
+
+    // 1. Prepare Summary Text
+    const now = new Date();
+    const dateStr = now.toLocaleString('ja-JP', { 
+      year: 'numeric', month: '2-digit', day: '2-digit', 
+      hour: '2-digit', minute: '2-digit' 
+    });
+
+    const macro = result.macro;
+    const technical = result.technical;
+    const fundamental = result.fundamental;
+    const qualitative = result.qualitative;
+    const risk = result.risk;
+
+    let summaryText = `【TradeAlgo Pro 分析レポート】\n` +
+      `発行日時: ${dateStr}\n` +
+      `銘柄: ${result.symbol}\n` +
+      `判定: ${result.signal}\n` +
+      `総合スコア: ${result.total_score}/${result.max_score} (${result.analysis_mode})\n` +
+      `========================\n\n` +
+      `■ 1. マクロ環境 (判定: ${macro.passed ? '正常' : '警戒'})\n` +
+      `・VIX: ${macro.vix ?? '—'} (${macro.vix_mode})\n` +
+      `・米10年債: ${macro.us10y ?? '—'}%\n` +
+      `・ドル円騰落: ${macro.usdjpy_trend > 0 ? '+' : ''}${macro.usdjpy_trend}%\n` +
+      `・原油σ: ${macro.oil_sigma ?? '—'} / 金σ: ${macro.gold_sigma ?? '—'}\n` +
+      `${macro.nasdaq_below_ma75 ? '⚠️ NASDAQ 75日線下\n' : ''}` +
+      `${macro.market_below_ma75 ? '⚠️ 市場 75日線下\n' : ''}` +
+      `${macro.commodity_alert ? '⚠️ コモディティ急騰警報\n' : ''}` +
+      `${macro.strong_sectors?.length ? `🔥 流入: ${macro.strong_sectors.join(', ')}\n` : ''}` +
+      `${macro.weak_sectors?.length ? `❄️ 流出: ${macro.weak_sectors.join(', ')}\n` : ''}` +
+      `${macro.block_reason ? `理由: ${macro.block_reason}\n` : ''}\n`;
+
+    if (fundamental) {
+      summaryText += `■ 2. ファンダメンタル (スコア: ${fundamental.sub_total}/${fundamental.max_score})\n` +
+        `・PER: ${fundamental.per ?? '—'}倍 / PBR: ${fundamental.pbr ?? '—'}倍\n` +
+        `・ROE: ${fundamental.roe ?? '—'}% / 営業利益成長: ${fundamental.op_income_growth_avg ?? '—'}%\n` +
+        `・根拠:\n ${fundamental.reasons.map(r => `  - ${r}`).join('\n')}\n` +
+        `  (ソース: ${fundamental.data_source})\n\n`;
+    }
+
+    if (technical) {
+      summaryText += `■ 3. テクニカル (スコア: ${technical.score}/40)\n` +
+        `・現在値: ${technical.current_price?.toLocaleString() ?? '—'} / RSI(14): ${technical.rsi ?? '—'}\n` +
+        `・MACD: ${technical.macd ?? '—'} (Sig: ${technical.macd_signal ?? '—'})\n` +
+        `・VWAP: ${technical.vwap?.toLocaleString() ?? '—'} / 出来高比: ${technical.volume_ratio ?? '—'}x\n` +
+        `・ボリンジャー: ${technical.bollinger_lower?.toLocaleString() ?? '—'} - ${technical.bollinger_upper?.toLocaleString() ?? '—'}\n` +
+        `・EMA: [5] ${technical.ema5?.toLocaleString() ?? '—'} [20] ${technical.ema20?.toLocaleString() ?? '—'} [75] ${technical.ema75?.toLocaleString() ?? '—'}\n` +
+        `・根拠:\n ${technical.reasons.map(r => `  - ${r}`).join('\n')}\n\n`;
+    }
+
+    if (qualitative) {
+      summaryText += `■ 4. 定性・ニュース (スコア: ${qualitative.score}/${qualitative.max_score})\n` +
+        `・根拠:\n ${qualitative.reasons.map(r => `  - ${r}`).join('\n')}\n` +
+        `  (ソース: ${qualitative.data_source})\n\n`;
+    }
+
+    if (risk) {
+      summaryText += `■ ⚔️ リスク管理\n` +
+        `・流動性: ${risk.liquidity_ok ? '✅ 問題なし' : '❌ 要注意'}\n` +
+        `${risk.trailing_stop_base ? `・${risk.trailing_stop_base_label}: ${risk.trailing_stop_base.toLocaleString()}\n` : ''}` +
+        `${risk.trailing_stop_high ? `・${risk.trailing_stop_high_label}: ${risk.trailing_stop_high.toLocaleString()}\n` : ''}` +
+        `${risk.warnings?.length ? `⚠️ 警告:\n ${risk.warnings.map(w => `  - ${w}`).join('\n')}\n` : ''}\n`;
+    }
+
+    summaryText += `----------\n#株 #テクニカル分析 #TradeAlgoPro`;
+
+    const shareData: ShareData = {
+      title: `TradeAlgo Pro: ${result.symbol} 判定`,
+      text: summaryText,
+    };
+
+    try {
+      if (navigator.share) {
+        // --- Attempt 1: Share with Image (Files) ---
+        let imageFile: File | null = null;
+        if (chartRef.current) {
+          try {
+            const canvas = await html2canvas(chartRef.current, {
+              scale: 2,
+              backgroundColor: '#1e293b',
+              useCORS: true,
+              logging: false
+            });
+            const blob = await new Promise<Blob | null>(resolve => canvas.toBlob(resolve, 'image/png'));
+            if (blob) {
+              imageFile = new File([blob], `TradeAlgo_${result.symbol}.png`, { type: 'image/png' });
+            }
+          } catch (e) {
+            console.warn('Image generation failed, falling back to text only share', e);
+          }
+        }
+
+        const fullShareData: ShareData = { ...shareData, files: imageFile ? [imageFile] : undefined };
+
+        // Check if image sharing is supported
+        if (fullShareData.files && navigator.canShare && navigator.canShare(fullShareData)) {
+          try {
+            await navigator.share(fullShareData);
+            return; // Success
+          } catch (err) {
+            console.warn('Full share (text+image) failed, retrying with text only', err);
+            // Ignore AbortError (user cancelled)
+            if ((err as Error).name === 'AbortError') return;
+          }
+        }
+
+        // --- Attempt 2: Share with Text Only ---
+        await navigator.share(shareData);
+      } else {
+        // --- Attempt 3: Clipboard Fallback (Non-mobile/Non-share supported) ---
+        throw new Error('Web Share API not supported');
+      }
+    } catch (err) {
+      if ((err as Error).name !== 'AbortError') {
+        console.error('Final sharing attempt failed', err);
+        // Last resort: Clipboard copy
+        const copied = await copyToClipboard(summaryText);
+        if (copied) {
+          alert('共有メニューを開けませんでした。結果をクリップボードにコピーしましたので、貼り付けてご利用ください。');
+        } else {
+          alert('共有に失敗しました。');
+        }
+      }
+    } finally {
+      setIsSharing(false);
     }
   };
 
@@ -234,7 +393,7 @@ export default function App() {
           </div>
 
           {/* Chart */}
-          <div className="card glass-panel" style={{ marginTop: '1.5rem' }}>
+          <div className="card glass-panel" style={{ marginTop: '1.5rem' }} ref={chartRef}>
             <div className="card-header">
               <Activity className="card-icon" />
               <span>価格チャート（参考）</span>
@@ -271,7 +430,7 @@ export default function App() {
                     />
                     <Area type="monotone" dataKey="price" stroke={getSignalColor(result.signal)} fillOpacity={1} fill="url(#colorPrice)" name="価格" />
                     <Legend verticalAlign="top" height={30} wrapperStyle={{ fontSize: '11px', paddingBottom: '10px' }} iconSize={10} />
-                    
+
                     {/* 指標オーバーレイ */}
                     <Line type="monotone" dataKey="ema5" stroke="#fcd34d" strokeWidth={2} dot={false} name="5日EMA" />
                     <Line type="monotone" dataKey="ema20" stroke="#fb923c" strokeWidth={2} dot={false} name="20日EMA" />
@@ -344,9 +503,22 @@ export default function App() {
 
         {/* Right column: Results */}
         <div className="card glass-panel result-panel">
-          <div className="card-header">
-            <AlertCircle className="card-icon" />
-            <span>AI 判定結果</span>
+          <div className="card-header" style={{ justifyContent: 'space-between' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+              <AlertCircle className="card-icon" />
+              <span>AI 判定結果</span>
+            </div>
+            {result && !isAnalyzing && (
+              <button
+                className="button secondary"
+                onClick={handleShare}
+                disabled={isSharing}
+                style={{ padding: '0.4rem 0.8rem', fontSize: '0.8rem' }}
+              >
+                {isSharing ? <RefreshCw size={14} className="spin" /> : <Share2 size={14} />}
+                <span>共有</span>
+              </button>
+            )}
           </div>
 
           {!result && !isAnalyzing && !error && (
