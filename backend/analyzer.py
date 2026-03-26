@@ -85,17 +85,18 @@ def analyze(request: AnalyzeRequest) -> AnalysisResult:
                 # どのソースからも取れず、J-Quantsも未設定の場合のみ「キーが必要」を表示
                 fundamental = _fundamental_unavailable()
             else:
-                fundamental = _score_fundamental(fund_data, "不明 / 取得不可")
+                fundamental = _score_fundamental(fund_data, "不明 / 取得不可", jp_stock=jp_stock)
         else:
             data_source = " + ".join(sources)
-            fundamental = _score_fundamental(fund_data, data_source)
+            fundamental = _score_fundamental(fund_data, data_source, jp_stock=jp_stock)
             # 日本株でJ-Quantsがない場合、yfinanceでの分析結果に補足を追加
             if jp_stock and not has_jquants:
                 fundamental.reasons.append("💡 J-Quantsキーを設定するとより詳細・正確な財務分析が可能になります")
 
     # === Layer 4: Qualitative (news sentiment) ===
     if fund_data is None:
-        fund_data = fetch_fundamentals(symbol, request.jquants_refresh_token if has_jquants else None)
+        # デイトレモード等のニュース取得。財務データ不要なのでJ-Quantsトークンは渡さない
+        fund_data = fetch_fundamentals(symbol, jquants_refresh_token=None)
 
     qualitative = _score_qualitative(fund_data, request.gemini_api_key if has_gemini else None, request.trade_style)
 
@@ -115,9 +116,15 @@ def analyze(request: AnalyzeRequest) -> AnalysisResult:
         fundamental.sub_total += 5
         fundamental.reasons.append(f"✅ マクロ影響: USD/JPY急騰(+{macro.usdjpy_trend:.1f}%)による円安メリット加点")
 
+    # スコアが最大値を超えたり、マイナスにならないよう調整 (マクロ補正後のクランプ)
+    fundamental.sub_total = max(0.0, min(float(fundamental.max_score), float(fundamental.sub_total)))
+
     # === Total Score & Max Score ===
-    total = technical.score + qualitative.score + fundamental.sub_total
-    max_score = 40 + qualitative.max_score + fundamental.max_score  # Technical(40) + Qualitative + Fundamental
+    # スイング・中長期投資の場合、テクニカルの比重を0.8倍に抑える (長期価値を重視)
+    tech_weight = 0.8 if request.trade_style != "day" else 1.0
+    
+    total = (technical.score * tech_weight) + qualitative.score + fundamental.sub_total
+    max_score = (40 * tech_weight) + qualitative.max_score + fundamental.max_score
 
     # === Normalize signal thresholds to the actual max score ===
     ratio = total / max_score if max_score > 0 else 0
@@ -502,7 +509,7 @@ def _fundamental_unavailable_day() -> FundamentalResult:
     return result
 
 
-def _score_fundamental(fund_data: dict, data_source: str) -> FundamentalResult:
+def _score_fundamental(fund_data: dict, data_source: str, jp_stock: bool = False) -> FundamentalResult:
     result = FundamentalResult()
     result.data_source = data_source
     reasons = []
@@ -554,7 +561,7 @@ def _score_fundamental(fund_data: dict, data_source: str) -> FundamentalResult:
         data_missing += 7; reasons.append("⚪ PERデータなし（スコア対象外）")
 
     if pbr:
-        if pbr < 1.0 and is_jp_stock:
+        if pbr < 1.0 and jp_stock:
             val_score += 6; reasons.append(f"✅ PBR {pbr:.2f}倍（東証改革テーマ・PBR1割れ）")
         elif pbr <= 1.2:
             val_score += 5; reasons.append(f"✅ PBR {pbr:.2f}倍（割安）")
