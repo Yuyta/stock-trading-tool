@@ -3,6 +3,6 @@ uvicorn[standard]
 yfinance
 pandas
 numpy
-google-generativeai
+google-genai
 requests
 pydantic

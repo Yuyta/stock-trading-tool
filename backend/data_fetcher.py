@@ -2,6 +2,7 @@ import re
 import yfinance as yf
 import pandas as pd
 import numpy as np
+import logging
 import requests
 from typing import Optional, Dict, Any
 
@@ -15,6 +16,8 @@ def normalize_jp_symbol(symbol: str) -> str:
         return symbol + ".T"
     return symbol
 
+
+logger = logging.getLogger(__name__)
 
 def fetch_price_history(symbol: str, timeframe: str = "1d") -> Optional[pd.DataFrame]:
     try:
@@ -33,7 +36,8 @@ def fetch_price_history(symbol: str, timeframe: str = "1d") -> Optional[pd.DataF
             
         df = ticker.history(period=period, interval=timeframe)
         return df if not df.empty else None
-    except Exception:
+    except Exception as e:
+        logger.error(f"Failed to fetch price history for {symbol}: {str(e)}")
         return None
 
 
@@ -52,7 +56,8 @@ def fetch_macro_data() -> Dict[str, Any]:
         try:
             df = yf.Ticker(sym).history(period="3mo")
             return key, df["Close"] if not df.empty else None
-        except Exception:
+        except Exception as e:
+            logger.error(f"Failed to fetch macro data for {sym} ({key}): {str(e)}")
             return key, None
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
@@ -77,7 +82,8 @@ def _fetch_yfinance_fundamentals(symbol: str) -> Dict[str, Any]:
         # info取得（新方式）
         try:
             info = ticker.get_info()
-        except Exception:
+        except Exception as e:
+            logger.warning(f"Failed to get info for {symbol}: {str(e)}")
             info = {}
 
         # -------------------------
@@ -143,7 +149,8 @@ def _fetch_yfinance_fundamentals(symbol: str) -> Dict[str, Any]:
                             np.mean(growths[-3:])
                         )
 
-        except Exception:
+        except Exception as e:
+            logger.error(f"Error calculating fundamental growth for {symbol}: {str(e)}")
             pass
 
         # -------------------------
@@ -167,9 +174,11 @@ def _fetch_yfinance_fundamentals(symbol: str) -> Dict[str, Any]:
                 now = time.time()
                 recent_count = sum(1 for n in news if now - n.get("providerPublishTime", 0) <= 86400)
                 result["news_count_24h"] = recent_count
-        except Exception:
+        except Exception as e:
+            logger.error(f"Error fetching news for {symbol}: {str(e)}")
             pass
-    except Exception:
+    except Exception as e:
+        logger.error(f"Final error in _fetch_yfinance_fundamentals for {symbol}: {str(e)}")
         pass
     return result
 
@@ -249,7 +258,8 @@ def _fetch_jquants(symbol: str, refresh_token: str) -> Dict[str, Any]:
                         if growths:
                             # Average of last 3 periods if available
                             result["op_income_growth_avg"] = float(np.mean(growths[-3:]))
-    except Exception:
+    except Exception as e:
+        logger.error(f"Error in _fetch_jquants for {symbol}: {str(e)}")
         pass
 
     try:
@@ -259,7 +269,8 @@ def _fetch_jquants(symbol: str, refresh_token: str) -> Dict[str, Any]:
         info = {}
         try:
             info = ticker.get_info()
-        except:
+        except Exception as e:
+            logger.warning(f"Failed to get info during J-Quants fallback for {symbol}: {str(e)}")
             pass
         result["market_cap"] = info.get("marketCap")
         result["sector"] = info.get("sector")
@@ -274,7 +285,8 @@ def _fetch_jquants(symbol: str, refresh_token: str) -> Dict[str, Any]:
             now = time.time()
             recent_count = sum(1 for n in news if now - n.get("providerPublishTime", 0) <= 86400)
             result["news_count_24h"] = recent_count
-    except Exception:
+    except Exception as e:
+        logger.error(f"Error in _fetch_jquants yfinance-fallback for {symbol}: {str(e)}")
         pass
     return result
 

@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import html2canvas from 'html2canvas';
+// import html2canvas from 'html2canvas'; // 削除
 import {
   Activity, BarChart3, Settings as SettingsIcon, PlayCircle, RefreshCw,
   TrendingUp, TrendingDown, Minus, ShieldCheck, ShieldAlert, ShieldX,
@@ -144,18 +144,13 @@ export default function App() {
     if (!result) return;
     setIsSharing(true);
 
-    // 1. Prepare Summary Text
     const now = new Date();
     const dateStr = now.toLocaleString('ja-JP', { 
       year: 'numeric', month: '2-digit', day: '2-digit', 
       hour: '2-digit', minute: '2-digit' 
     });
 
-    const macro = result.macro;
-    const technical = result.technical;
-    const fundamental = result.fundamental;
-    const qualitative = result.qualitative;
-    const risk = result.risk;
+    const { macro, fundamental, technical, qualitative, risk } = result;
 
     let summaryText = `【TradeAlgo Pro 分析レポート】\n` +
       `発行日時: ${dateStr}\n` +
@@ -216,52 +211,17 @@ export default function App() {
 
     try {
       if (navigator.share) {
-        // --- Attempt 1: Share with Image (Files) ---
-        let imageFile: File | null = null;
-        if (chartRef.current) {
-          try {
-            const canvas = await html2canvas(chartRef.current, {
-              scale: 2,
-              backgroundColor: '#1e293b',
-              useCORS: true,
-              logging: false
-            });
-            const blob = await new Promise<Blob | null>(resolve => canvas.toBlob(resolve, 'image/png'));
-            if (blob) {
-              imageFile = new File([blob], `TradeAlgo_${result.symbol}.png`, { type: 'image/png' });
-            }
-          } catch (e) {
-            console.warn('Image generation failed, falling back to text only share', e);
-          }
-        }
-
-        const fullShareData: ShareData = { ...shareData, files: imageFile ? [imageFile] : undefined };
-
-        // Check if image sharing is supported
-        if (fullShareData.files && navigator.canShare && navigator.canShare(fullShareData)) {
-          try {
-            await navigator.share(fullShareData);
-            return; // Success
-          } catch (err) {
-            console.warn('Full share (text+image) failed, retrying with text only', err);
-            // Ignore AbortError (user cancelled)
-            if ((err as Error).name === 'AbortError') return;
-          }
-        }
-
-        // --- Attempt 2: Share with Text Only ---
+        // --- Navigator Share (Text Only) ---
         await navigator.share(shareData);
       } else {
-        // --- Attempt 3: Clipboard Fallback (Non-mobile/Non-share supported) ---
         throw new Error('Web Share API not supported');
       }
     } catch (err) {
       if ((err as Error).name !== 'AbortError') {
-        console.error('Final sharing attempt failed', err);
-        // Last resort: Clipboard copy
+        console.warn('Navigator Share failed, trying Clipboard copy', err);
         const copied = await copyToClipboard(summaryText);
         if (copied) {
-          alert('共有メニューを開けませんでした。結果をクリップボードにコピーしましたので、貼り付けてご利用ください。');
+          alert('結果をクリップボードにコピーしました。');
         } else {
           alert('共有に失敗しました。');
         }

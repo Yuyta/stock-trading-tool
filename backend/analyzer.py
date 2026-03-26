@@ -1,5 +1,6 @@
 import numpy as np
 import pandas as pd
+import logging
 from typing import Optional
 from models import (
     AnalyzeRequest, AnalysisResult, MacroResult,
@@ -8,8 +9,11 @@ from models import (
 from data_fetcher import fetch_price_history, fetch_macro_data, fetch_fundamentals, is_jp_stock
 
 
+logger = logging.getLogger(__name__)
+
 def analyze(request: AnalyzeRequest) -> AnalysisResult:
     symbol = request.symbol.strip().upper()
+    logger.info(f"Analyzing {symbol} (Style: {request.trade_style}, Timeframe: {request.timeframe})")
     has_jquants = bool(request.jquants_refresh_token)
     has_gemini = bool(request.gemini_api_key)
     jp_stock = is_jp_stock(symbol)
@@ -461,6 +465,7 @@ def _analyze_technical(price_df: pd.DataFrame, trade_style: str) -> TechnicalRes
         result.vwap = round(float(vwap.iloc[-1]), 2)
 
     except Exception as e:
+        logger.error(f"Error in _analyze_technical for {price_df.index[-1] if not price_df.empty else 'Unknown'}: {str(e)}")
         reasons.append(f"テクニカルエラー {str(e)}")
 
     result.score = min(40.0, max(0.0, score))
@@ -677,11 +682,11 @@ def _score_qualitative(fund_data: dict, gemini_api_key: Optional[str], trade_sty
         result.reasons.append(f"エラー詳細: {error_msg[:40]}...")
 
     try:
-        import google.generativeai as genai
+        from google import genai
         import json
         import re as re_mod
 
-        genai.configure(api_key=gemini_api_key)
+        client = genai.Client(api_key=gemini_api_key)
         text_headlines = "\n".join(f"- {h}" for h in headlines)
         
         if trade_style == "day":
@@ -703,9 +708,11 @@ def _score_qualitative(fund_data: dict, gemini_api_key: Optional[str], trade_sty
 以下のJSON形式のみで回答してください:
 {{"score": <0-10の整数>, "sentiment": "<positive/neutral/negative>", "reason": "<50字以内の日本語で分析根拠>"}}"""
 
-        # Using gemini-3.1-flash-lite-preview for maximum compatibility and stability
-        model = genai.GenerativeModel("gemini-3.1-flash-lite-preview")
-        resp = model.generate_content(prompt)
+        # Using gemini-3-flash-preview (LATEST and RECOMMENDED for current SDK)
+        resp = client.models.generate_content(
+            model="gemini-3-flash-preview",
+            contents=prompt
+        )
         m = re_mod.search(r'\{.*\}', resp.text, re_mod.DOTALL)
         if m:
             parsed = json.loads(m.group())
@@ -719,6 +726,7 @@ def _score_qualitative(fund_data: dict, gemini_api_key: Optional[str], trade_sty
             run_keyword_fallback("JSON解析失敗")
             apply_news_count_modifier(result)
     except Exception as e:
+        logger.error(f"Error in _score_qualitative (Gemini API): {str(e)}")
         run_keyword_fallback(str(e))
         apply_news_count_modifier(result)
 
