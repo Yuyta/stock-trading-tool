@@ -63,6 +63,8 @@ function MacroBadge({ passed, vixMode, blockReason }: { passed: boolean; vixMode
   );
 }
 
+const API_BASE = (import.meta.env.VITE_API_URL as string) || '';
+
 export default function App() {
   const [symbol, setSymbol] = useState('AAPL');
   const [timeframe, setTimeframe] = useState('1d');
@@ -77,7 +79,7 @@ export default function App() {
   const [isSharing, setIsSharing] = useState(false);
 
   useEffect(() => {
-    fetch('/api/health')
+    fetch(`${API_BASE}/api/health`)
       .then(r => r.ok ? setBackendOnline(true) : setBackendOnline(false))
       .catch(() => setBackendOnline(false));
   }, []);
@@ -94,7 +96,7 @@ export default function App() {
     setError(null);
 
     try {
-      const resp = await fetch('/api/analyze', {
+      const resp = await fetch(`${API_BASE}/api/analyze`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

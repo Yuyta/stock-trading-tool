@@ -14,21 +14,26 @@ logging.basicConfig(
 )
 logger = logging.getLogger("stock-analyzer")
 
+import os
+
+# デプロイ環境向けの設定
+ALLOWED_ORIGINS = os.environ.get("CORS_ORIGINS", "*").split(",")
+
 app = FastAPI(title="Stock Analyzer API", version="1.0.0")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=ALLOWED_ORIGINS,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 
-@app.get("/health")
+@app.get("/api/health")
 def health():
     return {"status": "ok"}
 
 
-@app.post("/analyze", response_model=AnalysisResult)
+@app.post("/api/analyze", response_model=AnalysisResult)
 def analyze_endpoint(request: AnalyzeRequest):
     return analyze(request)
