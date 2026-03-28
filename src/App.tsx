@@ -3,10 +3,10 @@ import { useState, useEffect, useRef } from 'react';
 import {
   Activity, BarChart3, Settings as SettingsIcon, PlayCircle, RefreshCw,
   TrendingUp, TrendingDown, Minus, ShieldCheck, ShieldAlert, ShieldX,
-  AlertCircle, ChevronRight, Server, Share2
+  AlertCircle, ChevronRight, Server, Share2, Coins
 } from 'lucide-react';
 import {
-  ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid, Line, Legend
+  ResponsiveContainer, ComposedChart, Area, XAxis, YAxis, Tooltip, CartesianGrid, Line, Legend
 } from 'recharts';
 import { AnalysisResult, AppSettings } from './types';
 import { SettingsModal } from './SettingsModal';
@@ -68,7 +68,7 @@ const API_BASE = (import.meta.env.VITE_API_URL as string) || '';
 export default function App() {
   const [symbol, setSymbol] = useState('AAPL');
   const [timeframe, setTimeframe] = useState('1d');
-  const [tradeStyle, setTradeStyle] = useState('swing');
+  const [tradeStyle, setTradeStyle] = useState('long_hold');
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [result, setResult] = useState<AnalysisResult | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -122,7 +122,7 @@ export default function App() {
       await navigator.clipboard.writeText(text);
       return true;
     }
-    
+
     // Fallback for non-secure contexts (HTTP) or browsers missing Clipboard API
     const textArea = document.createElement("textarea");
     textArea.value = text;
@@ -147,9 +147,9 @@ export default function App() {
     setIsSharing(true);
 
     const now = new Date();
-    const dateStr = now.toLocaleString('ja-JP', { 
-      year: 'numeric', month: '2-digit', day: '2-digit', 
-      hour: '2-digit', minute: '2-digit' 
+    const dateStr = now.toLocaleString('ja-JP', {
+      year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit'
     });
 
     const { macro, fundamental, technical, qualitative, risk } = result;
@@ -197,11 +197,20 @@ export default function App() {
     }
 
     if (risk) {
-      summaryText += `■ ⚔️ リスク管理\n` +
+      summaryText += `■ ⚖️ リスク管理\n` +
         `・流動性: ${risk.liquidity_ok ? '✅ 問題なし' : '❌ 要注意'}\n` +
         `${risk.trailing_stop_base ? `・${risk.trailing_stop_base_label}: ${risk.trailing_stop_base.toLocaleString()}\n` : ''}` +
         `${risk.trailing_stop_high ? `・${risk.trailing_stop_high_label}: ${risk.trailing_stop_high.toLocaleString()}\n` : ''}` +
         `${risk.warnings?.length ? `⚠️ 警告:\n ${risk.warnings.map(w => `  - ${w}`).join('\n')}\n` : ''}\n`;
+    }
+
+    if (result.income) {
+      const inc = result.income;
+      summaryText += `■ 💰 配当・インカム (スコア: ${inc.score}/${inc.max_score})\n` +
+        `・利回り: ${inc.dividend_yield ?? '—'}% / 5年平均: ${inc.five_year_avg_yield ?? '—'}%\n` +
+        `・配当性向: ${inc.payout_ratio ?? '—'}%\n` +
+        `・グレアム指数: ${inc.graham_number ?? '—'}\n` +
+        `・根拠:\n ${inc.reasons.map(r => `  - ${r}`).join('\n')}\n\n`;
     }
 
     summaryText += `----------\n#株 #テクニカル分析 #TradeAlgoPro`;
@@ -291,7 +300,6 @@ export default function App() {
       </header>
 
       <main className="main-content">
-        {/* Left column */}
         <div>
           <div className="card glass-panel animate-slide-in">
             <div className="card-header">
@@ -318,6 +326,7 @@ export default function App() {
                     setTimeframe('5m');
                   }
                 }}>
+                  <option value="long_hold">長期保有 (配当・インカム)</option>
                   <option value="swing">中長期投資 (スイング)</option>
                   <option value="day">短期・デイトレード</option>
                 </select>
@@ -354,7 +363,6 @@ export default function App() {
             )}
           </div>
 
-          {/* Chart */}
           <div className="card glass-panel" style={{ marginTop: '1.5rem' }} ref={chartRef}>
             <div className="card-header">
               <Activity className="card-icon" />
@@ -363,7 +371,7 @@ export default function App() {
             <div className="chart-placeholder" style={{ height: '400px', padding: '10px 0', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               {result?.chart_data && result.chart_data.length > 0 ? (
                 <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={result.chart_data} margin={{ top: 5, right: 0, left: -20, bottom: 0 }}>
+                  <ComposedChart data={result.chart_data} margin={{ top: 5, right: 0, left: -20, bottom: 0 }}>
                     <defs>
                       <linearGradient id="colorPrice" x1="0" y1="0" x2="0" y2="1">
                         <stop offset="5%" stopColor={getSignalColor(result.signal)} stopOpacity={0.5} />
@@ -391,15 +399,26 @@ export default function App() {
                       labelStyle={{ color: 'var(--text-muted)' }}
                     />
                     <Area type="monotone" dataKey="price" stroke={getSignalColor(result.signal)} fillOpacity={1} fill="url(#colorPrice)" name="価格" />
+                    
+                    {/* トレードスタイルに応じた指標表示 */}
+                    {result.trade_style !== 'long_hold' && (
+                      <Line type="monotone" dataKey="ema5" stroke="#fcd34d" strokeWidth={2} dot={false} name="5日" />
+                    )}
+                    <Line type="monotone" dataKey="ema20" stroke="#fb923c" strokeWidth={2} dot={false} name="20日" />
+                    <Line type="monotone" dataKey="ema75" stroke="#a855f7" strokeWidth={2} dot={false} name="75日" />
+                    {result.trade_style !== 'day' && (
+                      <Line type="monotone" dataKey="ema200" stroke="#0ea5e9" strokeWidth={2} dot={false} name="200日" />
+                    )}
+                    
+                    {result.trade_style !== 'long_hold' && (
+                      <>
+                        <Line type="monotone" dataKey="bollinger_upper" stroke="rgba(255,255,255,0.3)" strokeDasharray="3 3" dot={false} name="ボリバン上限" />
+                        <Line type="monotone" dataKey="bollinger_lower" stroke="rgba(255,255,255,0.3)" strokeDasharray="3 3" dot={false} name="ボリバン下限" />
+                      </>
+                    )}
+                    
                     <Legend verticalAlign="top" height={30} wrapperStyle={{ fontSize: '11px', paddingBottom: '10px' }} iconSize={10} />
-
-                    {/* 指標オーバーレイ */}
-                    <Line type="monotone" dataKey="ema5" stroke="#fcd34d" strokeWidth={2} dot={false} name="5日EMA" />
-                    <Line type="monotone" dataKey="ema20" stroke="#fb923c" strokeWidth={2} dot={false} name="20日EMA" />
-                    <Line type="monotone" dataKey="ema75" stroke="#a855f7" strokeWidth={2} dot={false} name="75日EMA" />
-                    <Line type="monotone" dataKey="bollinger_upper" stroke="rgba(255,255,255,0.3)" strokeDasharray="3 3" dot={false} name="ボリバン上限" />
-                    <Line type="monotone" dataKey="bollinger_lower" stroke="rgba(255,255,255,0.3)" strokeDasharray="3 3" dot={false} name="ボリバン下限" />
-                  </AreaChart>
+                  </ComposedChart>
                 </ResponsiveContainer>
               ) : (
                 <div style={{ color: 'var(--text-muted)' }}>
@@ -418,20 +437,46 @@ export default function App() {
                   <span className="metric-title">RSI (14)</span>
                   <span className="metric-value">{result.technical.rsi ?? '—'}</span>
                 </div>
-
                 <div className="metric-card">
                   <span className="metric-title">MACD (Sig)</span>
                   <span className="metric-value" style={{ fontSize: '0.9rem' }}>
                     {result.technical.macd ?? '—'} ({result.technical.macd_signal ?? '—'})
                   </span>
                 </div>
-                <div className="metric-card">
-                  <span className="metric-title">VWAP</span>
-                  <span className="metric-value">{result.technical.vwap?.toLocaleString() ?? '—'}</span>
-                </div>
+                {result.trade_style === 'day' && (
+                  <div className="metric-card">
+                    <span className="metric-title">VWAP</span>
+                    <span className="metric-value">{result.technical.vwap?.toLocaleString() ?? '—'}</span>
+                  </div>
+                )}
                 <div className="metric-card">
                   <span className="metric-title">出来高比</span>
                   <span className="metric-value">{result.technical.volume_ratio != null ? `${result.technical.volume_ratio}x` : '—'}</span>
+                </div>
+                <div className="metric-card">
+                  <span className="metric-title">指数平滑移動平均 (EMA)</span>
+                  <div className="metric-value" style={{ fontSize: '0.75rem', display: 'flex', flexDirection: 'column', gap: '2px', marginTop: '4px' }}>
+                    {result.trade_style !== 'long_hold' && (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <span style={{ width: '8px', height: '2px', background: '#fcd34d', flexShrink: 0 }} />
+                        <span>5日: {result.technical.ema5?.toLocaleString() ?? '—'}</span>
+                      </div>
+                    )}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <span style={{ width: '8px', height: '2px', background: '#fb923c', flexShrink: 0 }} />
+                      <span>20日: {result.technical.ema20?.toLocaleString() ?? '—'}</span>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <span style={{ width: '8px', height: '2px', background: '#a855f7', flexShrink: 0 }} />
+                      <span>75日: {result.technical.ema75?.toLocaleString() ?? '—'}</span>
+                    </div>
+                    {result.trade_style !== 'day' && result.technical.ema200 != null && (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <span style={{ width: '8px', height: '2px', background: '#0ea5e9', flexShrink: 0 }} />
+                        <span>200日: {result.technical.ema200.toLocaleString()}</span>
+                      </div>
+                    )}
+                  </div>
                 </div>
                 <div className="metric-card">
                   <span className="metric-title">ボリンジャー(±2σ)</span>
@@ -440,23 +485,6 @@ export default function App() {
                       ? `${result.technical.bollinger_lower.toLocaleString()} - ${result.technical.bollinger_upper.toLocaleString()}`
                       : '—'}
                   </span>
-                </div>
-                <div className="metric-card">
-                  <span className="metric-title">指数平滑移動平均 (EMA)</span>
-                  <div className="metric-value" style={{ fontSize: '0.75rem', display: 'flex', flexDirection: 'column', gap: '2px', marginTop: '4px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#fcd34d', flexShrink: 0 }} />
-                      <span>5日: {result.technical.ema5?.toLocaleString() ?? '—'}</span>
-                    </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#fb923c', flexShrink: 0 }} />
-                      <span>20日: {result.technical.ema20?.toLocaleString() ?? '—'}</span>
-                    </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#a855f7', flexShrink: 0 }} />
-                      <span>75日: {result.technical.ema75?.toLocaleString() ?? '—'}</span>
-                    </div>
-                  </div>
                 </div>
               </div>
             )}
@@ -608,7 +636,7 @@ export default function App() {
                 </div>
               )}
 
-              {/* Qualitative */}
+              {/* Layer 4: Qualitative */}
               {result.qualitative && (
                 <div className="score-section">
                   <div className="score-section-header">
@@ -625,6 +653,31 @@ export default function App() {
                   </div>
                   <ul className="reason-list">
                     {result.qualitative.reasons.map((r, i) => (
+                      <li key={i}><ChevronRight size={13} />{r}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {/* Layer 5: Income (Dividend) */}
+              {result.income && (
+                <div className="score-section" style={{ borderLeft: '4px solid #FCD34D' }}>
+                  <div className="score-section-header">
+                    <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                      <Coins size={16} color="#FCD34D" />
+                      配当・インカム
+                    </span>
+                    <span className="score-num">{result.income.score} / {result.income.max_score}</span>
+                  </div>
+                  <ScoreBar value={result.income.score} max={result.income.max_score} color="#FCD34D" />
+                  <div className="kv-grid">
+                    {result.income.dividend_yield != null && <><span>配当利回り</span><span>{result.income.dividend_yield}%</span></>}
+                    {result.income.five_year_avg_yield != null && <><span>5年平均利回り</span><span>{result.income.five_year_avg_yield}%</span></>}
+                    {result.income.payout_ratio != null && <><span>配当性向</span><span>{result.income.payout_ratio}%</span></>}
+                    {result.income.graham_number != null && <><span>グレアム指数</span><span>{result.income.graham_number}</span></>}
+                  </div>
+                  <ul className="reason-list">
+                    {result.income.reasons.map((r, i) => (
                       <li key={i}><ChevronRight size={13} />{r}</li>
                     ))}
                   </ul>

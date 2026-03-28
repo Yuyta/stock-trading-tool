@@ -30,9 +30,9 @@ def fetch_price_history(symbol: str, timeframe: str = "1d") -> Optional[pd.DataF
         elif timeframe in ["15m", "30m", "60m", "90m", "1h"]:
             period = "1mo"
         elif timeframe in ["1d"]:
-            period = "6mo"
-        else:
             period = "2y"
+        else:
+            period = "10y"
             
         df = ticker.history(period=period, interval=timeframe)
         return df if not df.empty else None
@@ -106,6 +106,27 @@ def _fetch_yfinance_fundamentals(symbol: str) -> Dict[str, Any]:
         result["per"] = per
         result["pbr"] = pbr
         result["roe"] = roe
+
+        # -------------------------
+        # 配当関連 (Phase A)
+        # -------------------------
+        div_yield = info.get("dividendYield")
+        if div_yield is not None:
+            div_yield = div_yield * 100
+        result["dividend_yield"] = div_yield
+
+        payout = info.get("payoutRatio")
+        if payout is not None:
+            payout = payout * 100
+        result["payout_ratio"] = payout
+
+        five_yr_yield = info.get("fiveYearAvgDividendYield")
+        # fiveYearAvgDividendYield は既にパーセント表記の場合と小数の場合があるが、
+        # yfinance の仕様上、多くの場合パーセント（例: 3.5）で返る。
+        # 小数（例: 0.035）なら100倍する。
+        if five_yr_yield is not None and five_yr_yield < 1.0:
+            five_yr_yield = five_yr_yield * 100
+        result["five_year_avg_yield"] = five_yr_yield
 
         # -------------------------
         # 平均出来高

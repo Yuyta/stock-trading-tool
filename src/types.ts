@@ -14,6 +14,7 @@ export interface ChartDataPoint {
     ema5?: number;
     ema20?: number;
     ema75?: number;
+    ema200?: number;
     bollinger_upper?: number;
     bollinger_lower?: number;
 }
@@ -53,6 +54,7 @@ export interface TechnicalResult {
     ema5?: number;
     ema20?: number;
     ema75?: number;
+    ema200?: number;
     current_price?: number;
     golden_cross: boolean;
     above_ema75: boolean;
@@ -76,6 +78,17 @@ export interface QualitativeResult {
     reasons: string[];
 }
 
+export interface IncomeResult {
+    score: number;
+    max_score: number;
+    dividend_yield?: number;      // 配当利回り (%)
+    five_year_avg_yield?: number; // 5年平均配当利回り (%)
+    payout_ratio?: number;        // 配当性向 (%)
+    graham_number?: number;       // グレアム指数 (PER × PBR)
+    data_source: string;
+    reasons: string[];
+}
+
 export interface RiskInfo {
     liquidity_ok?: boolean;
     avg_daily_volume?: number;
@@ -89,6 +102,7 @@ export interface RiskInfo {
 export interface AnalysisResult {
     symbol: string;
     signal: string;
+    trade_style: string;
     total_score?: number;
     max_score: number;         // Sum of max scores of active layers
     analysis_mode: string;     // "フルモード" | "標準モード" | "基本モード"
@@ -96,6 +110,7 @@ export interface AnalysisResult {
     fundamental?: FundamentalResult;
     technical?: TechnicalResult;
     qualitative?: QualitativeResult;
+    income?: IncomeResult;
     risk?: RiskInfo;
     chart_data?: ChartDataPoint[];
     error?: string;

@@ -4,7 +4,7 @@ import logging
 from typing import Optional
 from models import (
     AnalyzeRequest, AnalysisResult, MacroResult,
-    FundamentalResult, TechnicalResult, QualitativeResult, RiskInfo,
+    FundamentalResult, TechnicalResult, QualitativeResult, IncomeResult, RiskInfo,
 )
 from data_fetcher import fetch_price_history, fetch_macro_data, fetch_fundamentals, is_jp_stock
 
@@ -119,15 +119,35 @@ def analyze(request: AnalyzeRequest) -> AnalysisResult:
     # スコアが最大値を超えたり、マイナスにならないよう調整 (マクロ補正後のクランプ)
     fundamental.sub_total = max(0.0, min(float(fundamental.max_score), float(fundamental.sub_total)))
 
+    # === Layer 5: Income (Dividend focus) ===
+    income = None
+    if request.trade_style == "long_hold":
+        income = _score_income(fund_data, jp_stock)
+
     # === Total Score & Max Score ===
-    # スイング・中長期投資の場合、テクニカルの比重を0.8倍に抑える (長期価値を重視)
-    tech_weight = 0.8 if request.trade_style != "day" else 1.0
-    
+    # スタイルに応じた比重調整
+    if request.trade_style == "day":
+        tech_weight = 1.0
+        fund_weight = 0.0
+        income_weight = 0.0
+    elif request.trade_style == "long_hold":
+        tech_weight = 0.4  # 長期ではテクニカルを大幅に下げる
+        fund_weight = 1.0
+        income_weight = 1.0
+    else:  # swing (default)
+        tech_weight = 0.8
+        fund_weight = 1.0
+        income_weight = 0.0
+
     total = (technical.score * tech_weight) + qualitative.score + fundamental.sub_total
-    max_score = (40 * tech_weight) + qualitative.max_score + fundamental.max_score
+    max_total = (40 * tech_weight) + qualitative.max_score + fundamental.max_score
+    
+    if income:
+        total += income.score
+        max_total += income.max_score
 
     # === Normalize signal thresholds to the actual max score ===
-    ratio = total / max_score if max_score > 0 else 0
+    ratio = total / max_total if max_total > 0 else 0
     if ratio >= 0.85:
         signal = "Strong Buy"
     elif ratio >= 0.65:
@@ -169,6 +189,27 @@ def analyze(request: AnalyzeRequest) -> AnalysisResult:
             trailing_stop_high_label="高値から−3%",
             warnings=warnings_list
         )
+    elif request.trade_style == "long_hold":
+        # 長期保有・配当向けリスク管理
+        dist_from_high = (current_price / high_60d - 1) * 100
+        if dist_from_high < -15:
+            warnings_list.append(f"🔴 高値から {dist_from_high:.1f}% 下落。ファンダメンタルに変化がないか再確認してください。")
+        elif dist_from_high < -10:
+            warnings_list.append(f"⚠️ 高値から {dist_from_high:.1f}% 下落（警告ライン）。")
+            
+        # 買い増し（リバランス）フラグの検討
+        if ratio >= 0.65 and dist_from_high < -12:
+            warnings_list.append("💎 総合評価が高い中での下落です。リバランス・買い増しの検討余地があります。")
+
+        risk = RiskInfo(
+            liquidity_ok=liquidity_ok,
+            avg_daily_volume=float(avg_vol) if avg_vol is not None else None,
+            trailing_stop_base=round(float(current_price * 0.90), 2),
+            trailing_stop_base_label="警告ライン(−10%)",
+            trailing_stop_high=round(float(current_price * 0.85), 2),
+            trailing_stop_high_label="撤退検討(−15%)",
+            warnings=warnings_list
+        )
     else:
         risk = RiskInfo(
             liquidity_ok=liquidity_ok,
@@ -189,6 +230,7 @@ def analyze(request: AnalyzeRequest) -> AnalysisResult:
         ema5_ser = closes.ewm(span=5, adjust=False).mean()
         ema20_ser = closes.ewm(span=20, adjust=False).mean()
         ema75_ser = closes.ewm(span=75, adjust=False).mean()
+        ema200_ser = closes.ewm(span=200, adjust=False).mean() if len(closes) >= 200 else None
         sma20 = closes.rolling(window=20).mean()
         std20 = closes.rolling(window=20).std()
         upper_ser = sma20 + (std20 * 2)
@@ -200,6 +242,7 @@ def analyze(request: AnalyzeRequest) -> AnalysisResult:
             "ema5": ema5_ser,
             "ema20": ema20_ser,
             "ema75": ema75_ser,
+            "ema200": ema200_ser if ema200_ser is not None else [float('nan')] * len(closes),
             "upper": upper_ser,
             "lower": lower_ser
         })
@@ -217,6 +260,7 @@ def analyze(request: AnalyzeRequest) -> AnalysisResult:
                 ema5=round(float(row["ema5"]), 2) if not pd.isna(row["ema5"]) else None,
                 ema20=round(float(row["ema20"]), 2) if not pd.isna(row["ema20"]) else None,
                 ema75=round(float(row["ema75"]), 2) if not pd.isna(row["ema75"]) else None,
+                ema200=round(float(row["ema200"]), 2) if not pd.isna(row["ema200"]) else None,
                 bollinger_upper=round(float(row["upper"]), 2) if not pd.isna(row["upper"]) else None,
                 bollinger_lower=round(float(row["lower"]), 2) if not pd.isna(row["lower"]) else None,
             ))
@@ -224,15 +268,17 @@ def analyze(request: AnalyzeRequest) -> AnalysisResult:
     return AnalysisResult(
         symbol=symbol,
         signal=signal,
+        trade_style=request.trade_style,
         total_score=round(float(total), 1),
-        max_score=round(float(max_score), 1),
+        max_score=round(float(max_total), 1),
         analysis_mode=analysis_mode,
         macro=macro,
         fundamental=fundamental,
         technical=technical,
         qualitative=qualitative,
+        income=income,
         risk=risk,
-        chart_data=chart_data,
+        chart_data=chart_data
     )
 
 
@@ -354,14 +400,17 @@ def _analyze_technical(price_df: pd.DataFrame, trade_style: str) -> TechnicalRes
         ema5 = closes.ewm(span=5, adjust=False).mean()
         ema20 = closes.ewm(span=20, adjust=False).mean()
         ema75 = closes.ewm(span=75, adjust=False).mean()
+        ema200 = closes.ewm(span=200, adjust=False).mean() if len(closes) >= 200 else ema75
         
         e5 = float(ema5.iloc[-1])
         e20 = float(ema20.iloc[-1])
         e75 = float(ema75.iloc[-1])
+        e200 = float(ema200.iloc[-1])
         
         result.ema5 = round(e5, 2)
         result.ema20 = round(e20, 2)
         result.ema75 = round(e75, 2)
+        result.ema200 = round(e200, 2) if len(closes) >= 200 else None
         result.above_ema75 = cur > e75
 
         # Golden Cross check (5 crosses 20)
@@ -402,14 +451,29 @@ def _analyze_technical(price_df: pd.DataFrame, trade_style: str) -> TechnicalRes
         # =====================================================
         # Trend Score
         # =====================================================
-        if e5 > e20 and cur > e75:
-            score += 15
-            reasons.append("✅ 強い上昇トレンド")
-        elif e5 > e20:
-            score += 8
-            reasons.append("⚠️ 短期上昇")
-        elif cur < e75:
-            reasons.append("❌ 長期トレンド下落中")
+        if trade_style == "long_hold":
+            # 長期トレンド (200日線)
+            if cur > e200:
+                score += 15
+                reasons.append("✅ 200日線上（長期上昇トレンド）")
+                # 200日線の傾き（過去20日）
+                if len(ema200) > 20:
+                    slope = (e200 / float(ema200.iloc[-20]) - 1) * 100
+                    if slope > 1.0:
+                        score += 5
+                        reasons.append(f"✅ 200日線が右肩上がり (+{slope:.1f}%)")
+            else:
+                score -= 5
+                reasons.append("❌ 200日線下（長期下落トレンド）")
+        else:
+            if e5 > e20 and cur > e75:
+                score += 15
+                reasons.append("✅ 強い上昇トレンド")
+            elif e5 > e20:
+                score += 8
+                reasons.append("⚠️ 短期上昇")
+            elif cur < e75:
+                reasons.append("❌ 長期トレンド下落中")
 
         # =====================================================
         # RSI
@@ -422,14 +486,19 @@ def _analyze_technical(price_df: pd.DataFrame, trade_style: str) -> TechnicalRes
         rsi = float(rsi_ser.iloc[-1])
         result.rsi = round(float(rsi), 1)
 
-        if 40 <= rsi <= 65:
-            score += 10
-            reasons.append(f"✅ RSI良好 {rsi:.0f}")
-        elif rsi > 70:
-            score += 4
-            reasons.append("⚠️ RSI過熱")
-        elif rsi < 30:
-            reasons.append("⚠️ RSI売られすぎ")
+        if trade_style == "long_hold":
+            # 長期では売られ過ぎからの反転を重視
+            if rsi < 35:
+                score += 10; reasons.append(f"✅ RSI売られすぎ圏内 {rsi:.0f}")
+            elif 40 <= rsi <= 60:
+                score += 5; reasons.append(f"✅ RSI安定 {rsi:.0f}")
+        else:
+            if 40 <= rsi <= 65:
+                score += 10; reasons.append(f"✅ RSI良好 {rsi:.0f}")
+            elif rsi > 70:
+                score += 4; reasons.append("⚠️ RSI過熱")
+            elif rsi < 30:
+                reasons.append("⚠️ RSI売られすぎ")
 
         # =====================================================
         # MACD
@@ -469,7 +538,19 @@ def _analyze_technical(price_df: pd.DataFrame, trade_style: str) -> TechnicalRes
         # For intraday, we should ideally reset daily, but here we'll do 20-period VWMA
         typical_price = (closes + highs + lows) / 3
         vwap = (typical_price * volumes).rolling(window=14).sum() / volumes.rolling(window=14).sum()
-        result.vwap = round(float(vwap.iloc[-1]), 2)
+        # =====================================================
+        # 52-Week High/Low (Long-term relative position)
+        # =====================================================
+        if len(closes) >= 240: # 約1年
+            high_52w = float(closes.tail(240).max())
+            dist_from_high = (cur / high_52w - 1) * 100
+            if trade_style == "long_hold":
+                if -25 <= dist_from_high <= -10:
+                    score += 10
+                    reasons.append(f"🔥 52週高値から {dist_from_high:.1f}%（絶好の押し目候補）")
+                elif dist_from_high < -30:
+                    score -= 5
+                    reasons.append(f"⚠️ 52週高値から {dist_from_high:.1f}%（落ちるナイフの警戒）")
 
     except Exception as e:
         logger.error(f"Error in _analyze_technical for {price_df.index[-1] if not price_df.empty else 'Unknown'}: {str(e)}")
@@ -495,6 +576,68 @@ def _fundamental_unavailable() -> FundamentalResult:
         "　　設定画面からJ-Quantsキーを入力すると詳細な財務分析が可能になります",
     ]
     return result
+
+def _score_income(fund_data: dict, jp_stock: bool) -> IncomeResult:
+    result = IncomeResult()
+    if not fund_data:
+        result.data_source = "なし"
+        result.reasons.append("⚪ 財務データが取得できないためインカム評価をスキップします")
+        return result
+
+    score = 0.0
+    reasons = []
+
+    # --- 配当利回り評価 ---
+    dy = fund_data.get("dividend_yield")
+    result.dividend_yield = dy
+    if dy is not None:
+        # 日本株 3.5%+, 米国株 3.0%+ で加点
+        threshold = 3.5 if jp_stock else 3.0
+        warning_limit = 6.0 if jp_stock else 5.0
+
+        if dy >= warning_limit:
+            score += 5; reasons.append(f"⚠️ 高利回り警告 {dy:.1f}%（利回り罠の可能性）")
+        elif dy >= threshold:
+            score += 10; reasons.append(f"✅ 高利回り {dy:.1f}%")
+        elif dy >= 1.5:
+            score += 5; reasons.append(f"✅ 配当あり {dy:.1f}%")
+        else:
+            reasons.append(f"➖ 低利回り {dy:.1f}%")
+            
+        # 5年平均との比較
+        avg_5y = fund_data.get("five_year_avg_yield")
+        result.five_year_avg_yield = avg_5y
+        if avg_5y is not None:
+            if dy > avg_5y + 0.5:
+                score += 5; reasons.append(f"✅ 過去5年平均({avg_5y:.1f}%)より利回り高く割安")
+    else:
+        reasons.append("⚪ 配当データなし")
+
+    # --- 配当性向評価 ---
+    payout = fund_data.get("payout_ratio")
+    result.payout_ratio = payout
+    if payout is not None:
+        if 20 <= payout <= 60:
+            score += 10; reasons.append(f"✅ 配当性向 {payout:.0f}%（健全な還元）")
+        elif 60 < payout <= 70:
+            score += 5; reasons.append(f"⚠️ 配当性向 {payout:.0f}%（やや高い）")
+        elif payout > 80:
+            score -= 5; reasons.append(f"❌ 配当性向 {payout:.0f}%（減配リスク大）")
+
+    # --- グレアム指数 (PER * PBR) ---
+    per = fund_data.get("per")
+    pbr = fund_data.get("pbr")
+    if per and pbr:
+        graham = per * pbr
+        result.graham_number = graham
+        threshold = 30 if jp_stock else 22.5
+        if graham < threshold:
+            score += 5; reasons.append(f"✅ グレアム指数 {graham:.1f}（割安基準クリア）")
+
+    result.score = max(0.0, score)
+    result.reasons = reasons
+    return result
+
 
 def _fundamental_unavailable_day() -> FundamentalResult:
     result = FundamentalResult()
@@ -607,8 +750,29 @@ def _score_qualitative(fund_data: dict, gemini_api_key: Optional[str], trade_sty
         result.data_source = "なし"
         result.reasons.append("⚪ ニュースデータなし（スコア対象外）")
         return result
-        
+
+    # ── スタイル別の重み設定 ──
+    if trade_style == "day":
+        max_score = 40.0
+        ai_multiplier = 4.0
+        kw_base = 20.0
+        kw_neg_penalty = 6.0  # デイトレは悪材料に敏感
+        kw_pos_bonus = 5.0
+    elif trade_style == "long_hold":
+        max_score = 10.0
+        ai_multiplier = 1.0
+        kw_base = 7.0
+        kw_neg_penalty = 1.5
+        kw_pos_bonus = 1.0
+    else:  # swing (default)
+        max_score = 20.0
+        ai_multiplier = 2.0
+        kw_base = 10.0
+        kw_neg_penalty = 3.0
+        kw_pos_bonus = 1.5
+
     def apply_news_count_modifier(res: QualitativeResult):
+        # ニュースの「密度」による調整（短期的な盛り上がりを評価）
         if news_count_24h >= 4:
             res.score = min(res.max_score, res.score + 4.0)
             res.reasons.append(f"✅ 24時間以内のニュース急増({news_count_24h}件・短期トレンド発生)")
@@ -616,75 +780,59 @@ def _score_qualitative(fund_data: dict, gemini_api_key: Optional[str], trade_sty
             res.score = min(res.max_score, res.score + 2.0)
             res.reasons.append(f"✅ 24時間以内のアクティブな情報発信({news_count_24h}件)")
 
-    # ── WITHOUT Gemini API: keyword-based, max 15 pts ──
+    # ── WITHOUT Gemini API: keyword-based, fallback ──
     if not gemini_api_key:
         result.data_source = "キーワード"
-        result.max_score = 15  # 判定の重みを強化
+        result.max_score = max_score
 
-        neg_kw = ["不祥事", "下方修正", "赤字", "倒産", "scandal", "fraud", "bankruptcy",
-                  "war", "downgrade", "warning", "recall", "investigation"]
-        pos_kw = ["増益", "上方修正", "最高益", "好決算", "growth", "upgrade",
-                  "record", "beat", "strong", "dividend", "buyback"]
+        # キーワードの定義 (Phase A: 配当関連を追加)
+        neg_kw = ["不祥事", "下方修正", "赤字", "倒産", "減配", "無配", "悪化", "scandal", "fraud", "bankruptcy",
+                  "downgrade", "warning", "recall", "investigation", "dividend cut"]
+        pos_kw = ["増益", "上方修正", "最高益", "好決算", "増配", "最高配", "株主還元", "自社株買い", "復配", "向上", "強気",
+                  "growth", "upgrade", "record", "beat", "strong", "dividend", "buyback", "shareholder return"]
 
         hits_neg = [kw for kw in neg_kw if any(kw.lower() in h.lower() for h in headlines)]
         hits_pos = [kw for kw in pos_kw if any(kw.lower() in h.lower() for h in headlines)]
         
-        neg = sum(1 for h in headlines for kw in neg_kw if kw.lower() in h.lower())
-        pos = sum(1 for h in headlines for kw in pos_kw if kw.lower() in h.lower())
+        neg_count = sum(1 for h in headlines for kw in neg_kw if kw.lower() in h.lower())
+        pos_count = sum(1 for h in headlines for kw in pos_kw if kw.lower() in h.lower())
 
-        if neg > pos:
-            # 基準10から減算
-            result.score = max(0.0, 10.0 - neg * 3.0)
+        if neg_count > pos_count:
+            result.score = max(0.0, kw_base - neg_count * kw_neg_penalty)
             result.sentiment = "negative"
-            kw_str = ", ".join(hits_neg)
-            result.reasons.append(f"⚠️ ネガティブキーワード検知: {kw_str}（{neg}件）")
-        elif pos > 0:
-            # 基準10から加算
-            result.score = min(15.0, 10.0 + pos * 1.5)
+            kw_str = ", ".join(list(set(hits_neg))) # 重複排除
+            result.reasons.append(f"⚠️ ネガティブキーワード検知: {kw_str}（{neg_count}件）")
+        elif pos_count > 0:
+            result.score = min(max_score, kw_base + pos_count * kw_pos_bonus)
             result.sentiment = "positive"
-            kw_str = ", ".join(hits_pos)
-            result.reasons.append(f"✅ ポジティブキーワード検知: {kw_str}（{pos}件）")
+            kw_str = ", ".join(list(set(hits_pos)))
+            result.reasons.append(f"✅ ポジティブキーワード検知: {kw_str}（{pos_count}件）")
         else:
-            result.score = 8.0
+            result.score = kw_base
             result.sentiment = "neutral"
-            result.reasons.append("➖ 中立的なニュース")
+            result.reasons.append("➖ 中立的なニュース（キーワード検知なし）")
 
-        result.reasons.append("　　Gemini APIキーを設定するとAI詳細分析（満点20点）が利用可能")
+        result.reasons.append("　　Gemini APIキーを設定するとAI詳細分析（満点加点）が利用可能")
         result.news_analyzed = True
         apply_news_count_modifier(result)
         return result
 
-    # ── WITH Gemini API: AI-powered, max 20 pts ──
+    # ── WITH Gemini API: AI-powered ──
     result.data_source = "Gemini AI"
-    result.max_score = 20
-    
-    # Pre-define keywords for fallback in case of API error
-    neg_kw = ["不祥事", "下方修正", "赤字", "倒産", "scandal", "fraud", "bankruptcy",
-              "war", "downgrade", "warning", "recall", "investigation"]
-    pos_kw = ["増益", "上方修正", "最高益", "好決算", "growth", "upgrade",
-              "record", "beat", "strong", "dividend", "buyback"]
+    result.max_score = max_score
     
     def run_keyword_fallback(error_msg: str):
         result.data_source = "キーワード(エラー切替)"
-        result.max_score = 15
-        hits_neg = [kw for kw in neg_kw if any(kw.lower() in h.lower() for h in headlines)]
-        hits_pos = [kw for kw in pos_kw if any(kw.lower() in h.lower() for h in headlines)]
-        
-        neg = sum(1 for h in headlines for kw in neg_kw if kw.lower() in h.lower())
-        pos = sum(1 for h in headlines for kw in pos_kw if kw.lower() in h.lower())
-        if neg > pos:
-            result.score = max(0.0, 10.0 - neg * 3.0)
-            result.sentiment = "negative"
-            kw_str = ", ".join(hits_neg)
-            result.reasons.append(f"⚠️ API制限のためキーワード判定: {kw_str}（{neg}件）")
-        elif pos > 0:
-            result.score = min(15.0, 10.0 + pos * 1.5)
-            result.sentiment = "positive"
-            kw_str = ", ".join(hits_pos)
-            result.reasons.append(f"✅ API制限のためキーワード判定: {kw_str}（{pos}件）")
+        neg_count = sum(1 for h in headlines for kw in ["下方修正", "減配", "赤字", "不祥事"] if kw in h)
+        pos_count = sum(1 for h in headlines for kw in ["上方修正", "増配", "最高益", "好決算"] if kw in h)
+        if neg_count > pos_count:
+            result.score = max(0.0, kw_base - neg_count * kw_neg_penalty); result.sentiment = "negative"
+            result.reasons.append(f"⚠️ API制限のためキーワード判定: {neg_count}件負")
+        elif pos_count > 0:
+            result.score = min(max_score, kw_base + pos_count * kw_pos_bonus); result.sentiment = "positive"
+            result.reasons.append(f"✅ API制限のためキーワード判定: {pos_count}件正")
         else:
-            result.score = 8.0
-            result.sentiment = "neutral"
+            result.score = kw_base; result.sentiment = "neutral"
             result.reasons.append("➖ API制限のためキーワード判定（中立）")
         result.reasons.append(f"エラー詳細: {error_msg[:40]}...")
 
@@ -705,6 +853,15 @@ def _score_qualitative(fund_data: dict, gemini_api_key: Optional[str], trade_sty
 
 以下のJSON形式のみで回答してください:
 {{"score": <0-10の整数>, "sentiment": "<positive/neutral/negative>", "reason": "<50字以内の日本語で分析根拠>"}}"""
+        elif trade_style == "long_hold":
+            prompt = f"""以下の株式ニュースヘッドラインを分析し、**「長期保有・配当投資家視点（配当の持続性、株主還元姿勢、経営の安定性）」**を基準に感情スコアを0〜10の整数で返してください。
+0=非常にネガティブ（不祥事、大幅減配、業績悪化による倒産リスク）、5=中立、10=非常にポジティブ（増配、累進配当の発表、安定した収益拡大、株主還元策の強化）
+
+ヘッドライン:
+{text_headlines}
+
+以下のJSON形式のみで回答してください:
+{{"score": <0-10の整数>, "sentiment": "<positive/neutral/negative>", "reason": "<50字以内の日本語で分析根拠>"}}"""
         else:
             prompt = f"""以下の株式ニュースヘッドラインを分析し、中長期的な投資家視点での感情スコアを0〜10の整数で返してください。
 0=非常にネガティブ（不祥事・倒産・戦争等）、5=中立、10=非常にポジティブ（増益・最高益等）
@@ -715,16 +872,17 @@ def _score_qualitative(fund_data: dict, gemini_api_key: Optional[str], trade_sty
 以下のJSON形式のみで回答してください:
 {{"score": <0-10の整数>, "sentiment": "<positive/neutral/negative>", "reason": "<50字以内の日本語で分析根拠>"}}"""
 
-        # Using gemini-3-flash-preview (LATEST and RECOMMENDED for current SDK)
+        # Using gemini-3-flash-preview (LATEST)
         resp = client.models.generate_content(
             model="gemini-3-flash-preview",
             contents=prompt
         )
+        # JSON部分の抽出
         m = re_mod.search(r'\{.*\}', resp.text, re_mod.DOTALL)
         if m:
             parsed = json.loads(m.group())
-            # 0-10のAIスコアを2倍にして20点満点化
-            result.score = float(max(0, min(10, parsed.get("score", 5)))) * 2.0
+            # AIスコアをスタイルの倍率に合わせて変換
+            result.score = float(max(0, min(10, parsed.get("score", 5)))) * ai_multiplier
             result.sentiment = parsed.get("sentiment", "neutral")
             result.reasons.append(f"✅ Gemini AI解析: {parsed.get('reason', '')}")
             result.news_analyzed = True
@@ -738,3 +896,4 @@ def _score_qualitative(fund_data: dict, gemini_api_key: Optional[str], trade_sty
         apply_news_count_modifier(result)
 
     return result
+

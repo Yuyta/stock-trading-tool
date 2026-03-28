@@ -27,7 +27,7 @@ backend/
 **役割：データ構造の定義層**
 * `pydantic.BaseModel` を活用し、フロントエンドとやり取りするJSONデータの型（スキーマ）を定義しています。
 * **リクエストモデル**: `AnalyzeRequest`（入力される銘柄コード、時間軸、トレードスタイル、APIキー等）。
-* **レスポンスモデル**: マクロ(`MacroResult`)、ファンダメンタル(`FundamentalResult`)、テクニカル(`TechnicalResult`)、定性・ニュース(`QualitativeResult`)、リスク情報(`RiskInfo`)、チャート表示用(`ChartDataPoint`)、そしてそれらを統括する `AnalysisResult` メインクラス。
+* **レスポンスモデル**: マクロ(`MacroResult`)、ファンダメンタル(`FundamentalResult`)、テクニカル(`TechnicalResult`)、配当・インカム(`IncomeResult`)、定性・ニュース(`QualitativeResult`)、リスク情報(`RiskInfo`)、チャート表示用(`ChartDataPoint`)、そしてそれらを統括する `AnalysisResult` メインクラス。
 
 ### 3. `data_fetcher.py`
 **役割：外部データソースとの通信を担うモジュール**
@@ -50,9 +50,10 @@ backend/
   * **トレンド転換**: MACDとシグナルのクロス判定。
   * **ボラティリティ**: ボリンジャーバンド（20期間, ±2σ）による過熱・反発期待の判定。
   * **モメンタム**: RVOL（相対出来高）による資金流入判定、VWAP（出来高加重平均）による価格優位性判定。
-* **3. ファンダメンタル分析 (`_score_fundamental`)**:
   * PER/PBR/ROEおよび営業利益成長率を分析。日本株特有のPBR1倍割れ改善期待などの加点ロジック。
-* **4. 定性・ニュース分析 (`_score_qualitative`)**:
+* **4. 配当・インカム分析 (`_score_income`)**:
+  * 配当利回り、5年平均、配当性向を分析。長期保有に向けたグレアム指数によるバリュエーション判定。
+* **5. 定性・ニュース分析 (`_score_qualitative`)**:
   * Gemini AIによる詳細感情分析。API未設定時はキーワードベースの簡易分析にフォールバック。
   * 直近24時間のニュース件数（出来事の密度）による短期トレンド加点。
 
