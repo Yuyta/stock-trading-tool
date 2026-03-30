@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {
   ChevronRight, Search, ArrowUpDown, Calendar, Tag, BarChart3,
-  ArrowLeft, RefreshCw, AlertCircle, Clock
+  ArrowLeft, RefreshCw, AlertCircle, Clock, Trash2
 } from 'lucide-react';
 import { AnalysisHistory, AnalysisResult } from './types';
 import { useAuth } from './AuthContext';
@@ -17,6 +17,7 @@ export const History: React.FC<HistoryProps> = ({ onBack, onSelectDetail }) => {
   const { token } = useAuth();
   const [histories, setHistories] = useState<AnalysisHistory[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isDeleting, setIsDeleting] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [searchSymbol, setSearchSymbol] = useState('');
   const [sortBy, setSortBy] = useState<'created_at' | 'symbol'>('created_at');
@@ -45,6 +46,33 @@ export const History: React.FC<HistoryProps> = ({ onBack, onSelectDetail }) => {
       setError(err instanceof Error ? err.message : '通信エラー');
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleDelete = async (e: React.MouseEvent, id: number) => {
+    e.stopPropagation(); // 親の onClick (詳細表示) を発火させない
+    
+    if (!window.confirm('この履歴を削除してもよろしいですか？')) {
+      return;
+    }
+
+    setIsDeleting(id);
+    try {
+      const resp = await fetch(`${API_BASE}/api/history/${id}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+
+      if (!resp.ok) throw new Error('削除に失敗しました');
+      
+      // 成功したらリストから除外
+      setHistories(prev => prev.filter(h => h.id !== id));
+    } catch (err) {
+      alert(err instanceof Error ? err.message : '削除エラーが発生しました');
+    } finally {
+      setIsDeleting(null);
     }
   };
 
@@ -105,12 +133,12 @@ export const History: React.FC<HistoryProps> = ({ onBack, onSelectDetail }) => {
               <Search size={18} className="search-icon" />
               <input
                 type="text"
-                placeholder="銘柄コードで検索..."
+                placeholder="銘柄コードや企業名で検索..."
                 value={searchSymbol}
-                onChange={(e) => setSearchSymbol(e.target.value.toUpperCase())}
+                onChange={(e) => setSearchSymbol(e.target.value)}
               />
             </div>
-            <button type="submit" className="button small">検索</button>
+            <button type="submit" className="button small" disabled={isLoading}>検索</button>
           </form>
 
           <div className="sort-buttons">
@@ -160,7 +188,12 @@ export const History: React.FC<HistoryProps> = ({ onBack, onSelectDetail }) => {
                 <div className="history-item-main">
                   <div className="history-item-info">
                     <div className="history-item-top">
-                      <span className="history-symbol">{item.symbol}</span>
+                      <div className="history-symbol-row">
+                        <span className="history-symbol">{item.symbol}</span>
+                        {item.symbol_name && (
+                          <span className="history-company-name">{item.symbol_name}</span>
+                        )}
+                      </div>
                       <span className="history-date">{formatDate(item.created_at)}</span>
                     </div>
                     <div className="history-item-details">
@@ -179,7 +212,22 @@ export const History: React.FC<HistoryProps> = ({ onBack, onSelectDetail }) => {
                     )}
                   </div>
                 </div>
-                <ChevronRight size={20} className="history-arrow" />
+                
+                <div className="history-actions">
+                  <button 
+                    className="button secondary icon-only delete-button"
+                    onClick={(e) => handleDelete(e, item.id)}
+                    disabled={isDeleting === item.id}
+                    title="削除"
+                  >
+                    {isDeleting === item.id ? (
+                      <RefreshCw size={18} className="spin" />
+                    ) : (
+                      <Trash2 size={18} />
+                    )}
+                  </button>
+                  <ChevronRight size={20} className="history-arrow" />
+                </div>
               </div>
             ))
           )}

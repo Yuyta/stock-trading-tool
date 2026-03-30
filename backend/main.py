@@ -3,6 +3,7 @@ import os
 from fastapi import FastAPI, Depends, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 from typing import Optional, List
 
@@ -105,6 +106,7 @@ def save_history(history: HistoryCreate, current_user: Optional[db_models.User] 
     new_history = db_models.AnalysisHistory(
         user_id=current_user.id,
         symbol=history.symbol,
+        symbol_name=history.symbol_name,
         trade_style=history.trade_style,
         signal=history.signal,
         total_score=history.total_score,
@@ -132,7 +134,12 @@ def get_histories(
     query = db.query(db_models.AnalysisHistory).filter(db_models.AnalysisHistory.user_id == current_user.id)
     
     if symbol:
-        query = query.filter(db_models.AnalysisHistory.symbol.ilike(f"%{symbol}%"))
+        query = query.filter(
+            or_(
+                db_models.AnalysisHistory.symbol.ilike(f"%{symbol}%"),
+                db_models.AnalysisHistory.symbol_name.ilike(f"%{symbol}%")
+            )
+        )
     
     # ソート設定
     attr = getattr(db_models.AnalysisHistory, sort_by, db_models.AnalysisHistory.created_at)
@@ -142,6 +149,24 @@ def get_histories(
         query = query.order_by(attr.asc())
     
     return query.all()
+
+
+@app.delete("/api/history/{history_id}")
+def delete_history(history_id: int, current_user: Optional[db_models.User] = Depends(get_current_user), db: Session = Depends(get_db)):
+    if current_user is None:
+        raise HTTPException(status_code=401, detail="認証が必要です")
+    
+    db_history = db.query(db_models.AnalysisHistory).filter(
+        db_models.AnalysisHistory.id == history_id,
+        db_models.AnalysisHistory.user_id == current_user.id
+    ).first()
+    
+    if not db_history:
+        raise HTTPException(status_code=404, detail="履歴が見つかりません")
+    
+    db.delete(db_history)
+    db.commit()
+    return {"status": "success", "message": "履歴を削除しました"}
 
 
 @app.get("/api/search", response_model=SearchResponse)

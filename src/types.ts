@@ -101,6 +101,7 @@ export interface RiskInfo {
 
 export interface AnalysisResult {
     symbol: string;
+    symbol_name?: string;
     signal: string;
     trade_style: string;
     total_score?: number;
@@ -137,6 +138,7 @@ export interface AnalysisHistory {
     id: number;
     user_id: number;
     symbol: string;
+    symbol_name?: string;
     trade_style: string;
     signal: string;
     total_score?: number;

@@ -268,6 +268,7 @@ def analyze(request: AnalyzeRequest) -> AnalysisResult:
 
     return AnalysisResult(
         symbol=symbol,
+        symbol_name=fund_data.get("name") if fund_data else None,
         signal=signal,
         trade_style=request.trade_style,
         total_score=round(float(total), 1),

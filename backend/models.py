@@ -135,6 +135,7 @@ class RiskInfo(BaseModel):
 
 class AnalysisResult(BaseModel):
     symbol: str
+    symbol_name: Optional[str] = None
     signal: str
     trade_style: str
     total_score: Optional[float] = None
@@ -161,6 +162,7 @@ class SearchResponse(BaseModel):
 
 class HistoryCreate(BaseModel):
     symbol: str
+    symbol_name: Optional[str] = None
     trade_style: str
     signal: str
     total_score: Optional[float] = None
@@ -173,6 +175,7 @@ class HistoryOut(BaseModel):
     id: int
     user_id: int
     symbol: str
+    symbol_name: Optional[str] = None
     trade_style: str
     signal: str
     total_score: Optional[float] = None

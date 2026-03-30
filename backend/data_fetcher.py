@@ -86,6 +86,9 @@ def _fetch_yfinance_fundamentals(symbol: str) -> Dict[str, Any]:
             logger.warning(f"Failed to get info for {symbol}: {str(e)}")
             info = {}
 
+        # 企業名
+        result["name"] = info.get("longName") or info.get("shortName") or symbol
+
         # -------------------------
         # PER
         # -------------------------

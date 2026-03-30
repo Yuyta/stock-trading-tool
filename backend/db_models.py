@@ -17,6 +17,7 @@ class AnalysisHistory(Base):
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"))
     symbol = Column(String, index=True)
+    symbol_name = Column(String, index=True)
     trade_style = Column(String)
     signal = Column(String)
     total_score = Column(Float, nullable=True)

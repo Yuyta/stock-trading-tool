@@ -31,6 +31,7 @@ backend/
   * `/api/search`: 企業名や銘柄コードからシンボル候補を検索。
   * `/api/history` (POST): 分析結果の永続化。
   * `/api/history` (GET): 保存された履歴の取得（検索・ソート対応）。
+  * `/api/history/{history_id}` (DELETE): 特定の履歴の削除。
 
 ### 2. `db_models.py` / `database.py`
 **役割：データベース層**

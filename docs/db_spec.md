@@ -21,6 +21,7 @@ erDiagram
         int id PK "自動インクリメントID"
         int user_id FK "ユーザーへの参照"
         string symbol "銘柄コード"
+        string symbol_name "企業名"
         string trade_style "長期/スイング/デイトレ"
         string signal "Strong Buy / Buy等"
         float total_score "総合スコア"
@@ -54,6 +55,7 @@ erDiagram
 | `id` | `Integer` | `Primary Key` | 履歴レコードの一意識別ID。 |
 | `user_id` | `Integer` | `Foreign Key` | `users.id` への参照。 |
 | `symbol` | `String` | `Index` | 判定を行った銘柄（例: 7203, AAPL）。 |
+| `symbol_name` | `String` | `Index` | 企業名（例: ソニーグループ, Apple Inc.）。 |
 | `trade_style` | `String` | | 選択したスタイル（`day`, `swing`, `long_hold`）。 |
 | `signal` | `String` | | 分析によるシグナル（`Buy`, `Sell` 等）。 |
 | `total_score` | `Float` | | 算出された総合スコア。 |
@@ -69,5 +71,6 @@ erDiagram
 - **インデックス**:
     - `users.username`: ユーザー認証を高速化するため。
     - `analysis_histories.symbol`: 特定の銘柄の過去履歴を素早く抽出するため。
+    - `analysis_histories.symbol_name`: 企業名での検索を高速化するため。
 - **データ永続化**:
     - `SQLite` を使用しているため、プロジェクト直下の `backend/stock_trading.db` にバックアップなしで直接保存されます。開発用であれば十分ですが、本番環境移行時は PostgreSQL 等への切り替えを推奨。

@@ -178,6 +178,7 @@ export default function App() {
             },
             body: JSON.stringify({
               symbol: data.symbol,
+              symbol_name: data.symbol_name,
               trade_style: data.trade_style,
               signal: data.signal,
               total_score: data.total_score,

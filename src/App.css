@@ -896,15 +896,30 @@
 
 .history-item-top {
   display: flex;
-  align-items: center;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.15rem;
+}
+
+.history-symbol-row {
+  display: flex;
+  align-items: baseline;
   gap: 0.75rem;
+  flex-wrap: wrap;
 }
 
 .history-symbol {
-  font-size: 1.15rem;
+  font-size: 1.1rem;
   font-weight: 700;
   color: var(--text-primary);
   letter-spacing: -0.3px;
+}
+
+.history-company-name {
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+  opacity: 0.9;
 }
 
 .history-date {
@@ -940,10 +955,36 @@
   color: var(--text-muted);
 }
 
+.history-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-shrink: 0;
+}
+
+.delete-button {
+  width: 34px !important;
+  height: 34px !important;
+  opacity: 0;
+  transition: all 0.2s ease;
+  background: rgba(248, 113, 113, 0.05) !important;
+  border-color: rgba(248, 113, 113, 0.2) !important;
+  color: #f87171 !important;
+}
+
+.delete-button:hover {
+  background: rgba(248, 113, 113, 0.15) !important;
+  border-color: #f87171 !important;
+  transform: scale(1.1);
+}
+
+.history-item:hover .delete-button {
+  opacity: 1;
+}
+
 .history-arrow {
   color: var(--text-muted);
   transition: all 0.2s;
-  flex-shrink: 0;
 }
 
 .history-item:hover .history-arrow {
