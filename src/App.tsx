@@ -3,7 +3,7 @@ import { useState, useEffect, useRef } from 'react';
 import {
   Activity, BarChart3, Settings as SettingsIcon, PlayCircle, RefreshCw,
   TrendingUp, TrendingDown, Minus, ShieldCheck, ShieldAlert, ShieldX,
-  AlertCircle, ChevronRight, Server, Share2, Coins, LogIn, LogOut, Clock
+  AlertCircle, ChevronRight, Server, Share2, Coins, LogIn, LogOut, Clock, Menu, X
 } from 'lucide-react';
 import {
   ResponsiveContainer, ComposedChart, Area, XAxis, YAxis, Tooltip, CartesianGrid, Line, Legend
@@ -83,6 +83,7 @@ export default function App() {
   const [showAuth, setShowAuth] = useState(false);
   const { user, token, logout } = useAuth();
   const [view, setView] = useState<'home' | 'history'>('home');
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
 
   useEffect(() => {
     fetch(`${API_BASE}/api/health`)
@@ -306,62 +307,78 @@ export default function App() {
         <AuthModal onClose={() => setShowAuth(false)} />
       )}
 
-      <header className="header glass-panel animate-slide-in">
-        <div className="header-title">
-          <Activity className="logo-icon" />
-          <span>TradeAlgo Pro</span>
-        </div>
-        <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
-          {/* API Connectivity Status */}
-          <div className={`backend-badge ${backendOnline === true ? 'online' : backendOnline === false ? 'offline' : 'checking'}`}>
+      <header className="header glass-panel animate-slide-in" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 0 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
+          <div className="header-title" onClick={() => setView('home')} style={{ cursor: 'pointer' }}>
+            <Activity className="logo-icon" />
+            <span>TradeAlgo Pro</span>
+          </div>
+
+          {/* API Connectivity Status (In header) */}
+          <div className={`backend-badge ${backendOnline === true ? 'online' : backendOnline === false ? 'offline' : 'checking'}`} style={{ marginLeft: 'auto', marginRight: '1rem' }}>
             <Server size={14} />
             <span>
               {backendOnline === true ? (
                 <>
-                  {settings.jquantsRefreshToken && settings.geminiApiKey ? 'J-Quants + Gemini 接続中' :
-                    settings.jquantsRefreshToken ? 'J-Quants 接続中' :
-                      settings.geminiApiKey ? 'Gemini 接続中' :
-                        'API接続済み (キー未設定)'}
+                  {settings.jquantsRefreshToken && settings.geminiApiKey ? 'J-Quants + Gemini' :
+                    settings.jquantsRefreshToken ? 'J-Quants' :
+                      settings.geminiApiKey ? 'Gemini' :
+                        'API未設定'}
                 </>
               ) : backendOnline === false ? 'サーバー未起動' : '接続確認中'}
             </span>
           </div>
-          {(!settings.jquantsRefreshToken && !settings.geminiApiKey && backendOnline === true) && (
-            <div className="backend-badge offline" style={{ background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444' }}>
-              <AlertCircle size={14} />
-              <span>APIキー未設定</span>
-            </div>
-          )}
-          <button className="button secondary" onClick={() => setShowSettings(true)}>
-            <SettingsIcon size={18} />
-            <span>設定</span>
-          </button>
 
-          {user ? (
-            <div className="user-nav">
+          <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
+            {user ? (
               <span className="user-name">{user.username}</span>
-              <button className="button secondary" onClick={logout}>
-                <LogOut size={18} />
-                <span>ログアウト</span>
+            ) : (
+              <button className="button small" onClick={() => setShowAuth(true)}>
+                <LogIn size={16} />
+                <span>ログイン / 新規登録</span>
               </button>
-            </div>
-          ) : (
-            <button className="button" onClick={() => setShowAuth(true)}>
-              <LogIn size={18} />
-              <span>ログイン / 新規登録</span>
-            </button>
-          )}
-          {user && (
+            )}
+
             <button 
-              className={`button ${view === 'history' ? '' : 'secondary'}`} 
-              onClick={() => setView(view === 'home' ? 'history' : 'home')}
-              title={view === 'home' ? '判定履歴を表示' : '分析画面へ戻る'}
+              className="button secondary icon-only" 
+              onClick={() => setIsMenuOpen(!isMenuOpen)}
+              aria-label="メニュー"
             >
-              {view === 'home' ? <Clock size={18} /> : <BarChart3 size={18} />}
-              <span>{view === 'home' ? '履歴' : '分析'}</span>
+              {isMenuOpen ? <X size={20} /> : <Menu size={20} />}
             </button>
-          )}
+          </div>
         </div>
+
+        {/* Hamburger Menu (Push layout) */}
+        {isMenuOpen && (
+          <div className="menu-push glass-panel">
+            <div className="menu-content">
+              <div className="menu-items-grid">
+                {user && (
+                  <button 
+                    className={`menu-item ${view === 'history' ? 'active' : ''}`}
+                    onClick={() => { setView(view === 'home' ? 'history' : 'home'); setIsMenuOpen(false); }}
+                  >
+                    {view === 'home' ? <Clock size={18} /> : <BarChart3 size={18} />}
+                    <span>{view === 'home' ? '履歴を見る' : '分析画面へ戻る'}</span>
+                  </button>
+                )}
+
+                <button className="menu-item" onClick={() => { setShowSettings(true); setIsMenuOpen(false); }}>
+                  <SettingsIcon size={18} />
+                  <span>設定</span>
+                </button>
+
+                {user && (
+                  <button className="menu-item danger" onClick={() => { logout(); setIsMenuOpen(false); }}>
+                    <LogOut size={18} />
+                    <span>ログアウト</span>
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
       </header>
 
       <main className="main-content">
