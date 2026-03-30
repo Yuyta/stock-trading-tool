@@ -69,7 +69,7 @@ function MacroBadge({ passed, vixMode, blockReason }: { passed: boolean; vixMode
 const API_BASE = (import.meta.env.VITE_API_URL as string) || '';
 
 export default function App() {
-  const [symbol, setSymbol] = useState('AAPL');
+  const [symbol, setSymbol] = useState('');
   const [timeframe, setTimeframe] = useState('1d');
   const [tradeStyle, setTradeStyle] = useState('long_hold');
   const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -123,7 +123,7 @@ export default function App() {
         try {
           await fetch(`${API_BASE}/api/history`, {
             method: 'POST',
-            headers: { 
+            headers: {
               'Content-Type': 'application/json',
               'Authorization': `Bearer ${token}`
             },
@@ -339,8 +339,8 @@ export default function App() {
               </button>
             )}
 
-            <button 
-              className="button secondary icon-only" 
+            <button
+              className="button secondary icon-only"
               onClick={() => setIsMenuOpen(!isMenuOpen)}
               aria-label="メニュー"
             >
@@ -355,7 +355,7 @@ export default function App() {
             <div className="menu-content">
               <div className="menu-items-grid">
                 {user && (
-                  <button 
+                  <button
                     className={`menu-item ${view === 'history' ? 'active' : ''}`}
                     onClick={() => { setView(view === 'home' ? 'history' : 'home'); setIsMenuOpen(false); }}
                   >
@@ -383,8 +383,8 @@ export default function App() {
 
       <main className="main-content">
         {view === 'history' ? (
-          <History 
-            onBack={() => setView('home')} 
+          <History
+            onBack={() => setView('home')}
             onSelectDetail={(res) => {
               setResult(res);
               setView('home');
@@ -393,433 +393,433 @@ export default function App() {
                 const resultsPanel = document.querySelector('.result-panel');
                 resultsPanel?.scrollIntoView({ behavior: 'smooth' });
               }, 100);
-            }} 
+            }}
           />
         ) : (
           <>
             <div>
-          <div className="card glass-panel animate-slide-in">
-            <div className="card-header">
-              <BarChart3 className="card-icon" />
-              <span>分析対象</span>
-            </div>
-            <div className="input-row">
-              <div className="input-group" style={{ flex: 1 }}>
-                <span className="input-label">銘柄コード</span>
-                <input
-                  type="text"
-                  className="input"
-                  value={symbol}
-                  onChange={(e) => setSymbol(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && handleAnalyze()}
-                  placeholder="例: AAPL, 7203, MSFT"
-                />
-              </div>
-              <div className="input-group" style={{ flex: 2 }}>
-                <span className="input-label">トレードスタイル</span>
-                <select className="input" value={tradeStyle} onChange={(e) => {
-                  setTradeStyle(e.target.value);
-                  if (e.target.value === 'day' && timeframe === '1d') {
-                    setTimeframe('5m');
-                  }
-                }}>
-                  <option value="long_hold">長期 (配当・インカム)</option>
-                  <option value="swing">中長期 (スイング)</option>
-                  <option value="day">短期 (デイトレ)</option>
-                </select>
-              </div>
-              <div className="input-group" style={{ flex: 1 }}>
-                <span className="input-label">時間軸</span>
-                <select className="input" value={timeframe} onChange={(e) => setTimeframe(e.target.value)}>
-                  <option value="1m">1分足</option>
-                  <option value="5m">5分足</option>
-                  <option value="15m">15分足</option>
-                  <option value="1h">1時間足</option>
-                  <option value="1d">日足</option>
-                  <option value="1wk">週足</option>
-                </select>
-              </div>
-            </div>
-            <button
-              className="button"
-              onClick={handleAnalyze}
-              disabled={isAnalyzing || !symbol || backendOnline === false}
-              style={{ padding: '1rem', fontSize: '1rem' }}
-            >
-              {isAnalyzing ? (
-                <><RefreshCw size={20} style={{ animation: 'spin 1s linear infinite' }} />分析中...</>
-              ) : (
-                <><PlayCircle size={20} />自動判定を開始</>
-              )}
-            </button>
-            {backendOnline === false && (
-              <div className="alert-box warning">
-                <AlertCircle size={16} />
-                <span>バックエンドが起動していません。<code>backend/</code> ディレクトリで <code>uvicorn main:app --reload</code> を実行してください。</span>
-              </div>
-            )}
-          </div>
-
-          <div className="card glass-panel" style={{ marginTop: '1.5rem' }} ref={chartRef}>
-            <div className="card-header">
-              <Activity className="card-icon" />
-              <span>価格チャート（参考）</span>
-            </div>
-            <div className="chart-placeholder" style={{ height: '400px', padding: '10px 0', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              {result?.chart_data && result.chart_data.length > 0 ? (
-                <ResponsiveContainer width="100%" height="100%">
-                  <ComposedChart data={result.chart_data} margin={{ top: 5, right: 0, left: -20, bottom: 0 }}>
-                    <defs>
-                      <linearGradient id="colorPrice" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor={getSignalColor(result.signal)} stopOpacity={0.5} />
-                        <stop offset="95%" stopColor={getSignalColor(result.signal)} stopOpacity={0} />
-                      </linearGradient>
-                    </defs>
-                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
-                    <XAxis
-                      dataKey="time"
-                      tick={{ fill: 'var(--text-muted)', fontSize: 10 }}
-                      tickLine={false}
-                      axisLine={false}
-                      minTickGap={20}
+              <div className="card glass-panel animate-slide-in">
+                <div className="card-header">
+                  <BarChart3 className="card-icon" />
+                  <span>分析対象</span>
+                </div>
+                <div className="input-row">
+                  <div className="input-group">
+                    <span className="input-label">銘柄コード</span>
+                    <input
+                      type="text"
+                      className="input"
+                      value={symbol}
+                      onChange={(e) => setSymbol(e.target.value)}
+                      onKeyDown={(e) => e.key === 'Enter' && handleAnalyze()}
+                      placeholder="例: AAPL, 7203, MSFT"
                     />
-                    <YAxis
-                      domain={['auto', 'auto']}
-                      tick={{ fill: 'var(--text-muted)', fontSize: 10 }}
-                      tickLine={false}
-                      axisLine={false}
-                      tickFormatter={(val) => val.toLocaleString()}
-                    />
-                    <Tooltip
-                      contentStyle={{ backgroundColor: 'rgba(15, 23, 42, 0.9)', borderColor: 'rgba(255,255,255,0.1)', color: 'white' }}
-                      itemStyle={{ color: 'var(--accent-primary)' }}
-                      labelStyle={{ color: 'var(--text-muted)' }}
-                    />
-                    <Area type="monotone" dataKey="price" stroke={getSignalColor(result.signal)} fillOpacity={1} fill="url(#colorPrice)" name="価格" />
-
-                    {/* トレードスタイルに応じた指標表示 */}
-                    {result.trade_style !== 'long_hold' && (
-                      <Line type="monotone" dataKey="ema5" stroke="#fcd34d" strokeWidth={2} dot={false} name="5日" />
-                    )}
-                    <Line type="monotone" dataKey="ema20" stroke="#fb923c" strokeWidth={2} dot={false} name="20日" />
-                    <Line type="monotone" dataKey="ema75" stroke="#a855f7" strokeWidth={2} dot={false} name="75日" />
-                    {result.trade_style !== 'day' && (
-                      <Line type="monotone" dataKey="ema200" stroke="#0ea5e9" strokeWidth={2} dot={false} name="200日" />
-                    )}
-
-                    {result.trade_style !== 'long_hold' && (
-                      <>
-                        <Line type="monotone" dataKey="bollinger_upper" stroke="rgba(255,255,255,0.3)" strokeDasharray="3 3" dot={false} name="ボリバン上限" />
-                        <Line type="monotone" dataKey="bollinger_lower" stroke="rgba(255,255,255,0.3)" strokeDasharray="3 3" dot={false} name="ボリバン下限" />
-                      </>
-                    )}
-
-                    <Legend verticalAlign="top" height={30} wrapperStyle={{ fontSize: '11px', paddingBottom: '10px' }} iconSize={10} />
-                  </ComposedChart>
-                </ResponsiveContainer>
-              ) : (
-                <div style={{ color: 'var(--text-muted)' }}>
-                  チャートデータがありません（判定を実行してください）
+                  </div>
+                  <div className="input-group">
+                    <span className="input-label">トレードスタイル</span>
+                    <select className="input" value={tradeStyle} onChange={(e) => {
+                      setTradeStyle(e.target.value);
+                      if (e.target.value === 'day' && timeframe === '1d') {
+                        setTimeframe('5m');
+                      }
+                    }}>
+                      <option value="long_hold">長期 (配当・インカム)</option>
+                      <option value="swing">中長期 (スイング)</option>
+                      <option value="day">短期 (デイトレ)</option>
+                    </select>
+                  </div>
+                  <div className="input-group">
+                    <span className="input-label">時間軸</span>
+                    <select className="input" value={timeframe} onChange={(e) => setTimeframe(e.target.value)}>
+                      <option value="1m">1分足</option>
+                      <option value="5m">5分足</option>
+                      <option value="15m">15分足</option>
+                      <option value="1h">1時間足</option>
+                      <option value="1d">日足</option>
+                      <option value="1wk">週足</option>
+                    </select>
+                  </div>
                 </div>
-              )}
-            </div>
-
-            {result?.technical && (
-              <div className="metric-grid">
-                <div className="metric-card">
-                  <span className="metric-title">現在値</span>
-                  <span className="metric-value">{result.technical.current_price?.toLocaleString() ?? '—'}</span>
-                </div>
-                <div className="metric-card">
-                  <span className="metric-title">RSI (14)</span>
-                  <span className="metric-value">{result.technical.rsi ?? '—'}</span>
-                </div>
-                <div className="metric-card">
-                  <span className="metric-title">MACD (Sig)</span>
-                  <span className="metric-value" style={{ fontSize: '0.9rem' }}>
-                    {result.technical.macd ?? '—'} ({result.technical.macd_signal ?? '—'})
-                  </span>
-                </div>
-                {result.trade_style === 'day' && (
-                  <div className="metric-card">
-                    <span className="metric-title">VWAP</span>
-                    <span className="metric-value">{result.technical.vwap?.toLocaleString() ?? '—'}</span>
+                <button
+                  className="button"
+                  onClick={handleAnalyze}
+                  disabled={isAnalyzing || !symbol || backendOnline === false}
+                >
+                  {isAnalyzing ? (
+                    <><RefreshCw size={20} className="spin" />分析中...</>
+                  ) : (
+                    <><PlayCircle size={20} />自動判定を開始</>
+                  )}
+                </button>
+                {backendOnline === false && (
+                  <div className="alert-box warning">
+                    <AlertCircle size={16} />
+                    <span>バックエンドが起動していません。<code>backend/</code> ディレクトリで <code>uvicorn main:app --reload</code> を実行してください。</span>
                   </div>
                 )}
-                <div className="metric-card">
-                  <span className="metric-title">出来高比</span>
-                  <span className="metric-value">{result.technical.volume_ratio != null ? `${result.technical.volume_ratio}x` : '—'}</span>
+              </div>
+
+              <div className="card glass-panel" style={{ marginTop: '1.5rem' }} ref={chartRef}>
+                <div className="card-header">
+                  <Activity className="card-icon" />
+                  <span>価格チャート（参考）</span>
                 </div>
-                <div className="metric-card">
-                  <span className="metric-title">指数平滑移動平均 (EMA)</span>
-                  <div className="metric-value" style={{ fontSize: '0.75rem', display: 'flex', flexDirection: 'column', gap: '2px', marginTop: '4px' }}>
-                    {result.trade_style !== 'long_hold' && (
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                        <span style={{ width: '8px', height: '2px', background: '#fcd34d', flexShrink: 0 }} />
-                        <span>5日: {result.technical.ema5?.toLocaleString() ?? '—'}</span>
+                <div className="chart-placeholder" style={{ height: '400px', padding: '10px 0', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  {result?.chart_data && result.chart_data.length > 0 ? (
+                    <ResponsiveContainer width="100%" height="100%">
+                      <ComposedChart data={result.chart_data} margin={{ top: 5, right: 0, left: -20, bottom: 0 }}>
+                        <defs>
+                          <linearGradient id="colorPrice" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor={getSignalColor(result.signal)} stopOpacity={0.5} />
+                            <stop offset="95%" stopColor={getSignalColor(result.signal)} stopOpacity={0} />
+                          </linearGradient>
+                        </defs>
+                        <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
+                        <XAxis
+                          dataKey="time"
+                          tick={{ fill: 'var(--text-muted)', fontSize: 10 }}
+                          tickLine={false}
+                          axisLine={false}
+                          minTickGap={20}
+                        />
+                        <YAxis
+                          domain={['auto', 'auto']}
+                          tick={{ fill: 'var(--text-muted)', fontSize: 10 }}
+                          tickLine={false}
+                          axisLine={false}
+                          tickFormatter={(val) => val.toLocaleString()}
+                        />
+                        <Tooltip
+                          contentStyle={{ backgroundColor: 'rgba(15, 23, 42, 0.9)', borderColor: 'rgba(255,255,255,0.1)', color: 'white' }}
+                          itemStyle={{ color: 'var(--accent-primary)' }}
+                          labelStyle={{ color: 'var(--text-muted)' }}
+                        />
+                        <Area type="monotone" dataKey="price" stroke={getSignalColor(result.signal)} fillOpacity={1} fill="url(#colorPrice)" name="価格" />
+
+                        {/* トレードスタイルに応じた指標表示 */}
+                        {result.trade_style !== 'long_hold' && (
+                          <Line type="monotone" dataKey="ema5" stroke="#fcd34d" strokeWidth={2} dot={false} name="5日" />
+                        )}
+                        <Line type="monotone" dataKey="ema20" stroke="#fb923c" strokeWidth={2} dot={false} name="20日" />
+                        <Line type="monotone" dataKey="ema75" stroke="#a855f7" strokeWidth={2} dot={false} name="75日" />
+                        {result.trade_style !== 'day' && (
+                          <Line type="monotone" dataKey="ema200" stroke="#0ea5e9" strokeWidth={2} dot={false} name="200日" />
+                        )}
+
+                        {result.trade_style !== 'long_hold' && (
+                          <>
+                            <Line type="monotone" dataKey="bollinger_upper" stroke="rgba(255,255,255,0.3)" strokeDasharray="3 3" dot={false} name="ボリバン上限" />
+                            <Line type="monotone" dataKey="bollinger_lower" stroke="rgba(255,255,255,0.3)" strokeDasharray="3 3" dot={false} name="ボリバン下限" />
+                          </>
+                        )}
+
+                        <Legend verticalAlign="top" height={30} wrapperStyle={{ fontSize: '11px', paddingBottom: '10px' }} iconSize={10} />
+                      </ComposedChart>
+                    </ResponsiveContainer>
+                  ) : (
+                    <div style={{ color: 'var(--text-muted)', textAlign: 'center' }}>
+                      <p>チャートデータがありません</p>
+                      <p>（判定を実行してください）</p>
+                    </div>
+                  )}
+                </div>
+
+                {result?.technical && (
+                  <div className="metric-grid">
+                    <div className="metric-card">
+                      <span className="metric-title">現在値</span>
+                      <span className="metric-value">{result.technical.current_price?.toLocaleString() ?? '—'}</span>
+                    </div>
+                    <div className="metric-card">
+                      <span className="metric-title">RSI (14)</span>
+                      <span className="metric-value">{result.technical.rsi ?? '—'}</span>
+                    </div>
+                    <div className="metric-card">
+                      <span className="metric-title">MACD (Sig)</span>
+                      <span className="metric-value" style={{ fontSize: '0.9rem' }}>
+                        {result.technical.macd ?? '—'} ({result.technical.macd_signal ?? '—'})
+                      </span>
+                    </div>
+                    {result.trade_style === 'day' && (
+                      <div className="metric-card">
+                        <span className="metric-title">VWAP</span>
+                        <span className="metric-value">{result.technical.vwap?.toLocaleString() ?? '—'}</span>
                       </div>
                     )}
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <span style={{ width: '8px', height: '2px', background: '#fb923c', flexShrink: 0 }} />
-                      <span>20日: {result.technical.ema20?.toLocaleString() ?? '—'}</span>
+                    <div className="metric-card">
+                      <span className="metric-title">出来高比</span>
+                      <span className="metric-value">{result.technical.volume_ratio != null ? `${result.technical.volume_ratio}x` : '—'}</span>
                     </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <span style={{ width: '8px', height: '2px', background: '#a855f7', flexShrink: 0 }} />
-                      <span>75日: {result.technical.ema75?.toLocaleString() ?? '—'}</span>
-                    </div>
-                    {result.trade_style !== 'day' && result.technical.ema200 != null && (
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                        <span style={{ width: '8px', height: '2px', background: '#0ea5e9', flexShrink: 0 }} />
-                        <span>200日: {result.technical.ema200.toLocaleString()}</span>
+                    <div className="metric-card">
+                      <span className="metric-title">指数平滑移動平均 (EMA)</span>
+                      <div className="metric-value" style={{ fontSize: '0.75rem', display: 'flex', flexDirection: 'column', gap: '2px', marginTop: '4px' }}>
+                        {result.trade_style !== 'long_hold' && (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <span style={{ width: '8px', height: '2px', background: '#fcd34d', flexShrink: 0 }} />
+                            <span>5日: {result.technical.ema5?.toLocaleString() ?? '—'}</span>
+                          </div>
+                        )}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <span style={{ width: '8px', height: '2px', background: '#fb923c', flexShrink: 0 }} />
+                          <span>20日: {result.technical.ema20?.toLocaleString() ?? '—'}</span>
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <span style={{ width: '8px', height: '2px', background: '#a855f7', flexShrink: 0 }} />
+                          <span>75日: {result.technical.ema75?.toLocaleString() ?? '—'}</span>
+                        </div>
+                        {result.trade_style !== 'day' && result.technical.ema200 != null && (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <span style={{ width: '8px', height: '2px', background: '#0ea5e9', flexShrink: 0 }} />
+                            <span>200日: {result.technical.ema200.toLocaleString()}</span>
+                          </div>
+                        )}
                       </div>
-                    )}
+                    </div>
+                    <div className="metric-card">
+                      <span className="metric-title">ボリンジャー(±2σ)</span>
+                      <span className="metric-value" style={{ fontSize: '0.85rem' }}>
+                        {result.technical.bollinger_lower != null && result.technical.bollinger_upper != null
+                          ? `${result.technical.bollinger_lower.toLocaleString()} - ${result.technical.bollinger_upper.toLocaleString()}`
+                          : '—'}
+                      </span>
+                    </div>
                   </div>
-                </div>
-                <div className="metric-card">
-                  <span className="metric-title">ボリンジャー(±2σ)</span>
-                  <span className="metric-value" style={{ fontSize: '0.85rem' }}>
-                    {result.technical.bollinger_lower != null && result.technical.bollinger_upper != null
-                      ? `${result.technical.bollinger_lower.toLocaleString()} - ${result.technical.bollinger_upper.toLocaleString()}`
-                      : '—'}
-                  </span>
-                </div>
+                )}
               </div>
-            )}
-          </div>
-        </div>
-
-        {/* Right column: Results */}
-        <div className="card glass-panel result-panel">
-          <div className="card-header" style={{ justifyContent: 'space-between' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-              <AlertCircle className="card-icon" />
-              <span>AI 判定結果</span>
             </div>
-            {result && !isAnalyzing && (
-              <button
-                className="button secondary"
-                onClick={handleShare}
-                disabled={isSharing}
-                style={{ padding: '0.4rem 0.8rem', fontSize: '0.8rem' }}
-              >
-                {isSharing ? <RefreshCw size={14} className="spin" /> : <Share2 size={14} />}
-                <span>共有</span>
-              </button>
-            )}
-          </div>
 
-          {!result && !isAnalyzing && !error && (
-            <div className="empty-state">
-              <BarChart3 size={48} style={{ opacity: 0.3, marginBottom: '1rem' }} />
-              <p>銘柄を入力して<br />「自動判定を開始」をクリック</p>
-            </div>
-          )}
+            {/* Right column: Results */}
+            <div className="card glass-panel result-panel">
+              <div className="card-header" style={{ justifyContent: 'space-between' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                  <AlertCircle className="card-icon" />
+                  <span>AI 判定結果</span>
+                </div>
+                {result && !isAnalyzing && (
+                  <button
+                    className="button secondary"
+                    onClick={handleShare}
+                    disabled={isSharing}
+                    style={{ padding: '0.4rem 0.8rem', fontSize: '0.8rem' }}
+                  >
+                    {isSharing ? <RefreshCw size={14} className="spin" /> : <Share2 size={14} />}
+                    <span>共有</span>
+                  </button>
+                )}
+              </div>
 
-          {isAnalyzing && (
-            <div className="empty-state">
-              <div className="spinner" style={{ marginBottom: '1rem' }} />
-              <p>三層分析を実行中...</p>
-              <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>マクロ → ファンダメンタル → テクニカル</p>
-            </div>
-          )}
+              {!result && !isAnalyzing && !error && (
+                <div className="empty-state">
+                  <BarChart3 size={48} style={{ opacity: 0.3, marginBottom: '1rem' }} />
+                  <p>銘柄を入力して<br />「自動判定を開始」をクリック</p>
+                </div>
+              )}
 
-          {error && (
-            <div className="alert-box danger">
-              <AlertCircle size={16} />
-              <span>{error}</span>
-            </div>
-          )}
+              {isAnalyzing && (
+                <div className="empty-state">
+                  <div className="spinner" style={{ marginBottom: '1rem' }} />
+                  <p>三層分析を実行中...</p>
+                  <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>マクロ → ファンダメンタル → テクニカル</p>
+                </div>
+              )}
 
-          {result && !isAnalyzing && (
-            <div className="result-body animate-slide-in">
-              {/* Signal */}
-              <div className="signal-block" style={{ color: getSignalColor(result.signal) }}>
-                {getSignalIcon(result.signal)}
-                <div>
-                  <div className="signal-text">{result.signal}</div>
-                  {result.total_score != null && result.max_score > 0 && (
-                    <div className="score-badge" style={{ borderColor: getSignalColor(result.signal) }}>
-                      {result.total_score} / {result.max_score} <span style={{ fontSize: '0.7em', marginLeft: '6px', fontWeight: 'normal' }}>({result.analysis_mode})</span>
+              {error && (
+                <div className="alert-box danger">
+                  <AlertCircle size={16} />
+                  <span>{error}</span>
+                </div>
+              )}
+
+              {result && !isAnalyzing && (
+                <div className="result-body animate-slide-in">
+                  {/* Signal */}
+                  <div className="signal-block" style={{ color: getSignalColor(result.signal) }}>
+                    {getSignalIcon(result.signal)}
+                    <div>
+                      <div className="signal-text">{result.signal}</div>
+                      {result.total_score != null && result.max_score > 0 && (
+                        <div className="score-badge" style={{ borderColor: getSignalColor(result.signal) }}>
+                          {result.total_score} / {result.max_score} <span style={{ fontSize: '0.7em', marginLeft: '6px', fontWeight: 'normal' }}>({result.analysis_mode})</span>
+                        </div>
+                      )}
+                      {/* 判定時のトレードスタイル表示 */}
+                      <div style={{ marginTop: '6px' }}>
+                        <span className="tag">判定スタイル: {result.trade_style === 'long_hold' ? '長期 (配当・インカム)' : result.trade_style === 'day' ? '短期 (デイトレ)' : '中長期 (スイング)'}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {result.error && (
+                    <div className="alert-box warning">
+                      <AlertCircle size={14} />
+                      <span>{result.error}</span>
                     </div>
                   )}
-                  {/* 判定時のトレードスタイル表示 */}
-                  <div style={{ marginTop: '6px' }}>
-                    <span className="tag">判定スタイル: {result.trade_style === 'long_hold' ? '長期 (配当・インカム)' : result.trade_style === 'day' ? '短期 (デイトレ)' : '中長期 (スイング)'}</span>
+
+                  {/* Layer 1: Macro */}
+                  <MacroBadge
+                    passed={result.macro.passed}
+                    vixMode={result.macro.vix_mode}
+                    blockReason={result.macro.block_reason}
+                  />
+                  <div className="layer-details" style={{ flexWrap: 'wrap' }}>
+                    {result.macro.vix != null && <span className="tag">VIX: {result.macro.vix}</span>}
+                    {result.macro.us10y != null && <span className="tag">米10年金利: {result.macro.us10y}%</span>}
+                    {result.macro.usdjpy_trend !== 0 && <span className="tag">USD/JPY: {result.macro.usdjpy_trend > 0 ? '+' : ''}{result.macro.usdjpy_trend}%</span>}
+                    {result.macro.oil_sigma != null && <span className="tag">原油σ: {result.macro.oil_sigma}</span>}
+                    {result.macro.gold_sigma != null && <span className="tag">金σ: {result.macro.gold_sigma}</span>}
+                    {result.macro.nasdaq_below_ma75 && <span className="tag danger-tag">NASDAQ 75日線下 ⚠️</span>}
+                    {result.macro.market_below_ma75 && <span className="tag danger-tag">市場 75日線下 ⚠️</span>}
+                    {result.macro.commodity_alert && <span className="tag danger-tag">コモディティ急騰 ⚠️</span>}
                   </div>
-                </div>
-              </div>
 
-              {result.error && (
-                <div className="alert-box warning">
-                  <AlertCircle size={14} />
-                  <span>{result.error}</span>
-                </div>
-              )}
-
-              {/* Layer 1: Macro */}
-              <MacroBadge
-                passed={result.macro.passed}
-                vixMode={result.macro.vix_mode}
-                blockReason={result.macro.block_reason}
-              />
-              <div className="layer-details" style={{ flexWrap: 'wrap' }}>
-                {result.macro.vix != null && <span className="tag">VIX: {result.macro.vix}</span>}
-                {result.macro.us10y != null && <span className="tag">米10年金利: {result.macro.us10y}%</span>}
-                {result.macro.usdjpy_trend !== 0 && <span className="tag">USD/JPY: {result.macro.usdjpy_trend > 0 ? '+' : ''}{result.macro.usdjpy_trend}%</span>}
-                {result.macro.oil_sigma != null && <span className="tag">原油σ: {result.macro.oil_sigma}</span>}
-                {result.macro.gold_sigma != null && <span className="tag">金σ: {result.macro.gold_sigma}</span>}
-                {result.macro.nasdaq_below_ma75 && <span className="tag danger-tag">NASDAQ 75日線下 ⚠️</span>}
-                {result.macro.market_below_ma75 && <span className="tag danger-tag">市場 75日線下 ⚠️</span>}
-                {result.macro.commodity_alert && <span className="tag danger-tag">コモディティ急騰 ⚠️</span>}
-              </div>
-
-              {/* Sector Rotation Info */}
-              {((result.macro.strong_sectors && result.macro.strong_sectors.length > 0) || (result.macro.weak_sectors && result.macro.weak_sectors.length > 0)) && (
-                <div className="layer-details" style={{ marginTop: '0.5rem', flexWrap: 'wrap' }}>
-                  {result.macro.strong_sectors && result.macro.strong_sectors.length > 0 && (
-                    <span className="tag" style={{ background: 'rgba(52, 211, 153, 0.2)', color: '#34d399', border: '1px solid rgba(52, 211, 153, 0.3)' }}>
-                      🔥 資金流入セクター: {result.macro.strong_sectors.join(', ')}
-                    </span>
-                  )}
-                  {result.macro.weak_sectors && result.macro.weak_sectors.length > 0 && (
-                    <span className="tag" style={{ background: 'rgba(248, 113, 113, 0.2)', color: '#f87171', border: '1px solid rgba(248, 113, 113, 0.3)' }}>
-                      ❄️ 資金流出セクター: {result.macro.weak_sectors.join(', ')}
-                    </span>
-                  )}
-                </div>
-              )}
-
-              {/* Layer 2: Fundamental */}
-              {result.fundamental && (
-                <div className="score-section">
-                  <div className="score-section-header">
-                    <span>📊 ファンダメンタル</span>
-                    {result.fundamental.max_score > 0 ? (
-                      <span className="score-num">{result.fundamental.sub_total} / {result.fundamental.max_score}</span>
-                    ) : (
-                      <span className="score-num" style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>スコア対象外</span>
-                    )}
-                  </div>
-                  {result.fundamental.max_score > 0 && <ScoreBar value={result.fundamental.sub_total} max={result.fundamental.max_score} color="var(--accent-primary)" />}
-                  <div className="sub-scores" style={{ justifyContent: 'space-between' }}>
-                    <div style={{ display: 'flex', gap: '1rem' }}>
-                      {result.fundamental.max_score > 0 && <span>成長性: {result.fundamental.growth_score}  割安性: {result.fundamental.valuation_score}</span>}
-                    </div>
-                    <span className="tag" style={{ border: 'none', background: 'rgba(255,255,255,0.1)' }}>ソース: {result.fundamental.data_source}</span>
-                  </div>
-                  <div className="kv-grid">
-                    {result.fundamental.per != null && <><span>PER</span><span>{result.fundamental.per}倍</span></>}
-                    {result.fundamental.pbr != null && <><span>PBR</span><span>{result.fundamental.pbr}倍</span></>}
-                    {result.fundamental.roe != null && <><span>ROE</span><span>{result.fundamental.roe}%</span></>}
-                    {result.fundamental.op_income_growth_avg != null && <><span>営業利益成長</span><span>{result.fundamental.op_income_growth_avg}%</span></>}
-                  </div>
-                  <ul className="reason-list">
-                    {result.fundamental.reasons.map((r, i) => (
-                      <li key={i}><ChevronRight size={13} />{r}</li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-
-              {/* Layer 3: Technical */}
-              {result.technical && (
-                <div className="score-section">
-                  <div className="score-section-header">
-                    <span>📈 テクニカル</span>
-                    <span className="score-num">{result.technical.score} / 40</span>
-                  </div>
-                  <ScoreBar value={result.technical.score} max={40} color="var(--success)" />
-                  <ul className="reason-list">
-                    {result.technical.reasons.map((r, i) => (
-                      <li key={i}><ChevronRight size={13} />{r}</li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-
-              {/* Layer 4: Qualitative */}
-              {result.qualitative && (
-                <div className="score-section">
-                  <div className="score-section-header">
-                    <span>📰 定性・ニュース</span>
-                    {result.qualitative.max_score > 0 ? (
-                      <span className="score-num">{result.qualitative.score} / {result.qualitative.max_score}</span>
-                    ) : (
-                      <span className="score-num" style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>スコア対象外</span>
-                    )}
-                  </div>
-                  {result.qualitative.max_score > 0 && <ScoreBar value={result.qualitative.score} max={result.qualitative.max_score} color="var(--warning)" />}
-                  <div className="sub-scores" style={{ justifyContent: 'flex-end', marginTop: result.qualitative.max_score > 0 ? 0 : '-0.5rem' }}>
-                    <span className="tag" style={{ border: 'none', background: 'rgba(255,255,255,0.1)' }}>分析: {result.qualitative.data_source}</span>
-                  </div>
-                  <ul className="reason-list">
-                    {result.qualitative.reasons.map((r, i) => (
-                      <li key={i}><ChevronRight size={13} />{r}</li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-
-              {/* Layer 5: Income (Dividend) */}
-              {result.income && (
-                <div className="score-section" style={{ borderLeft: '4px solid #FCD34D' }}>
-                  <div className="score-section-header">
-                    <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                      <Coins size={16} color="#FCD34D" />
-                      配当・インカム
-                    </span>
-                    <span className="score-num">{result.income.score} / {result.income.max_score}</span>
-                  </div>
-                  <ScoreBar value={result.income.score} max={result.income.max_score} color="#FCD34D" />
-                  <div className="kv-grid">
-                    {result.income.dividend_yield != null && <><span>配当利回り</span><span>{result.income.dividend_yield}%</span></>}
-                    {result.income.five_year_avg_yield != null && <><span>5年平均利回り</span><span>{result.income.five_year_avg_yield}%</span></>}
-                    {result.income.payout_ratio != null && <><span>配当性向</span><span>{result.income.payout_ratio}%</span></>}
-                    {result.income.graham_number != null && <><span>グレアム指数</span><span>{result.income.graham_number}</span></>}
-                  </div>
-                  <ul className="reason-list">
-                    {result.income.reasons.map((r, i) => (
-                      <li key={i}><ChevronRight size={13} />{r}</li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-
-              {/* Risk Info */}
-              {result.risk && (
-                <div className="risk-section">
-                  <span className="metric-title">🛡 リスク管理</span>
-
-                  {result.risk.warnings && result.risk.warnings.length > 0 && (
-                    <ul className="reason-list" style={{ marginBottom: '0.75rem', marginTop: '0.5rem' }}>
-                      {result.risk.warnings.map((w, i) => (
-                        <li key={`risk-warn-${i}`} style={{ color: 'var(--danger)' }}>{w}</li>
-                      ))}
-                    </ul>
-                  )}
-
-                  <div className="kv-grid">
-                    {result.risk.liquidity_ok != null && (
-                      <>
-                        <span>流動性</span>
-                        <span style={{ color: result.risk.liquidity_ok ? 'var(--success)' : 'var(--danger)' }}>
-                          {result.risk.liquidity_ok ? '✅ 問題なし' : '❌ 低流動性注意'}
+                  {/* Sector Rotation Info */}
+                  {((result.macro.strong_sectors && result.macro.strong_sectors.length > 0) || (result.macro.weak_sectors && result.macro.weak_sectors.length > 0)) && (
+                    <div className="layer-details" style={{ marginTop: '0.5rem', flexWrap: 'wrap' }}>
+                      {result.macro.strong_sectors && result.macro.strong_sectors.length > 0 && (
+                        <span className="tag" style={{ background: 'rgba(52, 211, 153, 0.2)', color: '#34d399', border: '1px solid rgba(52, 211, 153, 0.3)' }}>
+                          🔥 資金流入セクター: {result.macro.strong_sectors.join(', ')}
                         </span>
-                      </>
-                    )}
-                    {result.risk.trailing_stop_base != null && (
-                      <><span>{result.risk.trailing_stop_base_label}</span><span>{result.risk.trailing_stop_base.toLocaleString()}</span></>
-                    )}
-                    {result.risk.trailing_stop_high != null && (
-                      <><span>{result.risk.trailing_stop_high_label}</span><span>{result.risk.trailing_stop_high.toLocaleString()}</span></>
-                    )}
-                  </div>
+                      )}
+                      {result.macro.weak_sectors && result.macro.weak_sectors.length > 0 && (
+                        <span className="tag" style={{ background: 'rgba(248, 113, 113, 0.2)', color: '#f87171', border: '1px solid rgba(248, 113, 113, 0.3)' }}>
+                          ❄️ 資金流出セクター: {result.macro.weak_sectors.join(', ')}
+                        </span>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Layer 2: Fundamental */}
+                  {result.fundamental && (
+                    <div className="score-section">
+                      <div className="score-section-header">
+                        <span>📊 ファンダメンタル</span>
+                        {result.fundamental.max_score > 0 ? (
+                          <span className="score-num">{result.fundamental.sub_total} / {result.fundamental.max_score}</span>
+                        ) : (
+                          <span className="score-num" style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>スコア対象外</span>
+                        )}
+                      </div>
+                      {result.fundamental.max_score > 0 && <ScoreBar value={result.fundamental.sub_total} max={result.fundamental.max_score} color="var(--accent-primary)" />}
+                      <div className="sub-scores" style={{ justifyContent: 'space-between' }}>
+                        <div style={{ display: 'flex', gap: '1rem' }}>
+                          {result.fundamental.max_score > 0 && <span>成長性: {result.fundamental.growth_score}  割安性: {result.fundamental.valuation_score}</span>}
+                        </div>
+                        <span className="tag" style={{ border: 'none', background: 'rgba(255,255,255,0.1)' }}>ソース: {result.fundamental.data_source}</span>
+                      </div>
+                      <div className="kv-grid">
+                        {result.fundamental.per != null && <><span>PER</span><span>{result.fundamental.per}倍</span></>}
+                        {result.fundamental.pbr != null && <><span>PBR</span><span>{result.fundamental.pbr}倍</span></>}
+                        {result.fundamental.roe != null && <><span>ROE</span><span>{result.fundamental.roe}%</span></>}
+                        {result.fundamental.op_income_growth_avg != null && <><span>営業利益成長</span><span>{result.fundamental.op_income_growth_avg}%</span></>}
+                      </div>
+                      <ul className="reason-list">
+                        {result.fundamental.reasons.map((r, i) => (
+                          <li key={i}><ChevronRight size={13} />{r}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {/* Layer 3: Technical */}
+                  {result.technical && (
+                    <div className="score-section">
+                      <div className="score-section-header">
+                        <span>📈 テクニカル</span>
+                        <span className="score-num">{result.technical.score} / 40</span>
+                      </div>
+                      <ScoreBar value={result.technical.score} max={40} color="var(--success)" />
+                      <ul className="reason-list">
+                        {result.technical.reasons.map((r, i) => (
+                          <li key={i}><ChevronRight size={13} />{r}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {/* Layer 4: Qualitative */}
+                  {result.qualitative && (
+                    <div className="score-section">
+                      <div className="score-section-header">
+                        <span>📰 定性・ニュース</span>
+                        {result.qualitative.max_score > 0 ? (
+                          <span className="score-num">{result.qualitative.score} / {result.qualitative.max_score}</span>
+                        ) : (
+                          <span className="score-num" style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>スコア対象外</span>
+                        )}
+                      </div>
+                      {result.qualitative.max_score > 0 && <ScoreBar value={result.qualitative.score} max={result.qualitative.max_score} color="var(--warning)" />}
+                      <div className="sub-scores" style={{ justifyContent: 'flex-end', marginTop: result.qualitative.max_score > 0 ? 0 : '-0.5rem' }}>
+                        <span className="tag" style={{ border: 'none', background: 'rgba(255,255,255,0.1)' }}>分析: {result.qualitative.data_source}</span>
+                      </div>
+                      <ul className="reason-list">
+                        {result.qualitative.reasons.map((r, i) => (
+                          <li key={i}><ChevronRight size={13} />{r}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {/* Layer 5: Income (Dividend) */}
+                  {result.income && (
+                    <div className="score-section" style={{ borderLeft: '4px solid #FCD34D' }}>
+                      <div className="score-section-header">
+                        <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                          <Coins size={16} color="#FCD34D" />
+                          配当・インカム
+                        </span>
+                        <span className="score-num">{result.income.score} / {result.income.max_score}</span>
+                      </div>
+                      <ScoreBar value={result.income.score} max={result.income.max_score} color="#FCD34D" />
+                      <div className="kv-grid">
+                        {result.income.dividend_yield != null && <><span>配当利回り</span><span>{result.income.dividend_yield}%</span></>}
+                        {result.income.five_year_avg_yield != null && <><span>5年平均利回り</span><span>{result.income.five_year_avg_yield}%</span></>}
+                        {result.income.payout_ratio != null && <><span>配当性向</span><span>{result.income.payout_ratio}%</span></>}
+                        {result.income.graham_number != null && <><span>グレアム指数</span><span>{result.income.graham_number}</span></>}
+                      </div>
+                      <ul className="reason-list">
+                        {result.income.reasons.map((r, i) => (
+                          <li key={i}><ChevronRight size={13} />{r}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {/* Risk Info */}
+                  {result.risk && (
+                    <div className="risk-section">
+                      <span className="metric-title">🛡 リスク管理</span>
+
+                      {result.risk.warnings && result.risk.warnings.length > 0 && (
+                        <ul className="reason-list" style={{ marginBottom: '0.75rem', marginTop: '0.5rem' }}>
+                          {result.risk.warnings.map((w, i) => (
+                            <li key={`risk-warn-${i}`} style={{ color: 'var(--danger)' }}>{w}</li>
+                          ))}
+                        </ul>
+                      )}
+
+                      <div className="kv-grid">
+                        {result.risk.liquidity_ok != null && (
+                          <>
+                            <span>流動性</span>
+                            <span style={{ color: result.risk.liquidity_ok ? 'var(--success)' : 'var(--danger)' }}>
+                              {result.risk.liquidity_ok ? '✅ 問題なし' : '❌ 低流動性注意'}
+                            </span>
+                          </>
+                        )}
+                        {result.risk.trailing_stop_base != null && (
+                          <><span>{result.risk.trailing_stop_base_label}</span><span>{result.risk.trailing_stop_base.toLocaleString()}</span></>
+                        )}
+                        {result.risk.trailing_stop_high != null && (
+                          <><span>{result.risk.trailing_stop_high_label}</span><span>{result.risk.trailing_stop_high.toLocaleString()}</span></>
+                        )}
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
-          )}
-        </div>
-        </>
+          </>
         )}
       </main>
     </div>

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  ChevronRight, Search, ArrowUpDown, Calendar, Tag, BarChart3, 
+import {
+  ChevronRight, Search, ArrowUpDown, Calendar, Tag, BarChart3,
   ArrowLeft, RefreshCw, AlertCircle, Clock
 } from 'lucide-react';
 import { AnalysisHistory, AnalysisResult } from './types';
@@ -101,18 +101,20 @@ export const History: React.FC<HistoryProps> = ({ onBack, onSelectDetail }) => {
         {/* Search & Sort Controls */}
         <div className="history-controls">
           <form onSubmit={handleSearch} className="search-box">
-            <Search size={18} className="search-icon" />
-            <input 
-              type="text" 
-              placeholder="銘柄コードで検索..." 
-              value={searchSymbol}
-              onChange={(e) => setSearchSymbol(e.target.value.toUpperCase())}
-            />
+            <div className="search-input-wrapper">
+              <Search size={18} className="search-icon" />
+              <input
+                type="text"
+                placeholder="銘柄コードで検索..."
+                value={searchSymbol}
+                onChange={(e) => setSearchSymbol(e.target.value.toUpperCase())}
+              />
+            </div>
             <button type="submit" className="button small">検索</button>
           </form>
 
           <div className="sort-buttons">
-            <button 
+            <button
               className={`sort-tab ${sortBy === 'created_at' ? 'active' : ''}`}
               onClick={() => toggleSort('created_at')}
             >
@@ -120,7 +122,7 @@ export const History: React.FC<HistoryProps> = ({ onBack, onSelectDetail }) => {
               分析日時
               {sortBy === 'created_at' && <ArrowUpDown size={12} className={sortOrder} />}
             </button>
-            <button 
+            <button
               className={`sort-tab ${sortBy === 'symbol' ? 'active' : ''}`}
               onClick={() => toggleSort('symbol')}
             >
@@ -150,8 +152,8 @@ export const History: React.FC<HistoryProps> = ({ onBack, onSelectDetail }) => {
             </div>
           ) : (
             histories.map((item) => (
-              <div 
-                key={item.id} 
+              <div
+                key={item.id}
                 className="history-item glass-panel hover-effect"
                 onClick={() => onSelectDetail(JSON.parse(item.result_json))}
               >
