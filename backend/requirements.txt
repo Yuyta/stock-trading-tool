@@ -6,3 +6,7 @@ numpy
 google-genai
 requests
 pydantic
+sqlalchemy
+bcrypt
+python-jose[cryptography]
+python-multipart

@@ -3,13 +3,15 @@ import { useState, useEffect, useRef } from 'react';
 import {
   Activity, BarChart3, Settings as SettingsIcon, PlayCircle, RefreshCw,
   TrendingUp, TrendingDown, Minus, ShieldCheck, ShieldAlert, ShieldX,
-  AlertCircle, ChevronRight, Server, Share2, Coins
+  AlertCircle, ChevronRight, Server, Share2, Coins, LogIn, LogOut
 } from 'lucide-react';
 import {
   ResponsiveContainer, ComposedChart, Area, XAxis, YAxis, Tooltip, CartesianGrid, Line, Legend
 } from 'recharts';
 import { AnalysisResult, AppSettings } from './types';
 import { SettingsModal } from './SettingsModal';
+import { useAuth } from './AuthContext';
+import { AuthModal } from './AuthModal';
 import './App.css';
 
 const SETTINGS_KEY = 'stock_analyzer_settings';
@@ -63,7 +65,7 @@ function MacroBadge({ passed, vixMode, blockReason }: { passed: boolean; vixMode
   );
 }
 
-const API_BASE = (import.meta.env.VITE_API_URL as string) || '';
+const API_BASE = (import.meta.env.VITE_API_URL as string) || 'http://localhost:8000';
 
 export default function App() {
   const [symbol, setSymbol] = useState('AAPL');
@@ -77,6 +79,8 @@ export default function App() {
   const [backendOnline, setBackendOnline] = useState<boolean | null>(null);
   const chartRef = useRef<HTMLDivElement>(null);
   const [isSharing, setIsSharing] = useState(false);
+  const [showAuth, setShowAuth] = useState(false);
+  const { user, logout } = useAuth();
 
   useEffect(() => {
     fetch(`${API_BASE}/api/health`)
@@ -272,6 +276,10 @@ export default function App() {
         />
       )}
 
+      {showAuth && (
+        <AuthModal onClose={() => setShowAuth(false)} />
+      )}
+
       <header className="header glass-panel animate-slide-in">
         <div className="header-title">
           <Activity className="logo-icon" />
@@ -302,6 +310,21 @@ export default function App() {
             <SettingsIcon size={18} />
             <span>設定</span>
           </button>
+
+          {user ? (
+            <div className="user-nav">
+              <span className="user-name">{user.username}</span>
+              <button className="button secondary" onClick={logout}>
+                <LogOut size={18} />
+                <span>ログアウト</span>
+              </button>
+            </div>
+          ) : (
+            <button className="button" onClick={() => setShowAuth(true)}>
+              <LogIn size={18} />
+              <span>ログイン / 新規登録</span>
+            </button>
+          )}
         </div>
       </header>
 
