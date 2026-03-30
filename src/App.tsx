@@ -65,7 +65,7 @@ function MacroBadge({ passed, vixMode, blockReason }: { passed: boolean; vixMode
   );
 }
 
-const API_BASE = (import.meta.env.VITE_API_URL as string) || 'http://localhost:8000';
+const API_BASE = (import.meta.env.VITE_API_URL as string) || '';
 
 export default function App() {
   const [symbol, setSymbol] = useState('AAPL');
@@ -166,7 +166,7 @@ export default function App() {
     let summaryText = `【TradeAlgo Pro 分析レポート】\n` +
       `発行日時: ${dateStr}\n` +
       `銘柄: ${result.symbol}\n` +
-        `トレードスタイル: ${styleLabelMap[result.trade_style] ?? result.trade_style}\n` +
+      `トレードスタイル: ${styleLabelMap[result.trade_style] ?? result.trade_style}\n` +
       `判定: ${result.signal}\n` +
       `総合スコア: ${result.total_score}/${result.max_score} (${result.analysis_mode})\n` +
       `========================\n\n` +
@@ -336,8 +336,8 @@ export default function App() {
               <span>分析対象</span>
             </div>
             <div className="input-row">
-              <div className="input-group" style={{ flex: 2 }}>
-                <span className="input-label">銘柄コード / シンボル</span>
+              <div className="input-group" style={{ flex: 1 }}>
+                <span className="input-label">銘柄コード</span>
                 <input
                   type="text"
                   className="input"

@@ -10,7 +10,7 @@ interface AuthContextType extends AuthState {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 const TOKEN_KEY = 'stock_analyzer_token';
-const API_BASE = (import.meta.env.VITE_API_URL as string) || 'http://localhost:8000';
+const API_BASE = (import.meta.env.VITE_API_URL as string) || '';
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<AuthState>({

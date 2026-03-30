@@ -6,7 +6,7 @@ interface AuthModalProps {
   onClose: () => void;
 }
 
-const API_BASE = (import.meta.env.VITE_API_URL as string) || 'http://localhost:8000';
+const API_BASE = (import.meta.env.VITE_API_URL as string) || '';
 
 export function AuthModal({ onClose }: AuthModalProps) {
   const { login: setAuth } = useAuth();
