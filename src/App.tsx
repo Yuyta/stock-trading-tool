@@ -153,10 +153,16 @@ export default function App() {
     });
 
     const { macro, fundamental, technical, qualitative, risk } = result;
+    const styleLabelMap: Record<string, string> = {
+      long_hold: '長期 (配当・インカム)',
+      swing: '中長期 (スイング)',
+      day: '短期 (デイトレ)'
+    };
 
     let summaryText = `【TradeAlgo Pro 分析レポート】\n` +
       `発行日時: ${dateStr}\n` +
       `銘柄: ${result.symbol}\n` +
+        `トレードスタイル: ${styleLabelMap[result.trade_style] ?? result.trade_style}\n` +
       `判定: ${result.signal}\n` +
       `総合スコア: ${result.total_score}/${result.max_score} (${result.analysis_mode})\n` +
       `========================\n\n` +
@@ -326,9 +332,9 @@ export default function App() {
                     setTimeframe('5m');
                   }
                 }}>
-                  <option value="long_hold">長期保有 (配当・インカム)</option>
-                  <option value="swing">中長期投資 (スイング)</option>
-                  <option value="day">短期・デイトレード</option>
+                  <option value="long_hold">長期 (配当・インカム)</option>
+                  <option value="swing">中長期 (スイング)</option>
+                  <option value="day">短期 (デイトレ)</option>
                 </select>
               </div>
               <div className="input-group" style={{ flex: 1 }}>
@@ -399,7 +405,7 @@ export default function App() {
                       labelStyle={{ color: 'var(--text-muted)' }}
                     />
                     <Area type="monotone" dataKey="price" stroke={getSignalColor(result.signal)} fillOpacity={1} fill="url(#colorPrice)" name="価格" />
-                    
+
                     {/* トレードスタイルに応じた指標表示 */}
                     {result.trade_style !== 'long_hold' && (
                       <Line type="monotone" dataKey="ema5" stroke="#fcd34d" strokeWidth={2} dot={false} name="5日" />
@@ -409,14 +415,14 @@ export default function App() {
                     {result.trade_style !== 'day' && (
                       <Line type="monotone" dataKey="ema200" stroke="#0ea5e9" strokeWidth={2} dot={false} name="200日" />
                     )}
-                    
+
                     {result.trade_style !== 'long_hold' && (
                       <>
                         <Line type="monotone" dataKey="bollinger_upper" stroke="rgba(255,255,255,0.3)" strokeDasharray="3 3" dot={false} name="ボリバン上限" />
                         <Line type="monotone" dataKey="bollinger_lower" stroke="rgba(255,255,255,0.3)" strokeDasharray="3 3" dot={false} name="ボリバン下限" />
                       </>
                     )}
-                    
+
                     <Legend verticalAlign="top" height={30} wrapperStyle={{ fontSize: '11px', paddingBottom: '10px' }} iconSize={10} />
                   </ComposedChart>
                 </ResponsiveContainer>
@@ -545,6 +551,10 @@ export default function App() {
                       {result.total_score} / {result.max_score} <span style={{ fontSize: '0.7em', marginLeft: '6px', fontWeight: 'normal' }}>({result.analysis_mode})</span>
                     </div>
                   )}
+                  {/* 判定時のトレードスタイル表示 */}
+                  <div style={{ marginTop: '6px' }}>
+                    <span className="tag">判定スタイル: {result.trade_style === 'long_hold' ? '長期 (配当・インカム)' : result.trade_style === 'day' ? '短期 (デイトレ)' : '中長期 (スイング)'}</span>
+                  </div>
                 </div>
               </div>
 
