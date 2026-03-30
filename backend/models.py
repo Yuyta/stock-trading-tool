@@ -150,6 +150,15 @@ class AnalysisResult(BaseModel):
     error: Optional[str] = None
 
 
+class SearchResult(BaseModel):
+    symbol: str
+    name: Optional[str] = None
+    exchange: Optional[str] = None
+    type: Optional[str] = None
+
+class SearchResponse(BaseModel):
+    results: List[SearchResult]
+
 class HistoryCreate(BaseModel):
     symbol: str
     trade_style: str

@@ -145,3 +145,10 @@ export interface AnalysisHistory {
     result_json: string;
     created_at: string;
 }
+
+export interface SearchResult {
+    symbol: string;
+    name: string;
+    exchange: string;
+    type: string;
+}

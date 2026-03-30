@@ -38,6 +38,7 @@ def analyze(request: AnalyzeRequest) -> AnalysisResult:
     if price_df is None or price_df.empty:
         return AnalysisResult(
             symbol=symbol, signal="見送り",
+            trade_style=request.trade_style,
             macro=macro, analysis_mode=analysis_mode,
             error=f"'{symbol}' のデータを取得できませんでした。銘柄コードを確認してください。",
         )

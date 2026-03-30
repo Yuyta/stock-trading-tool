@@ -6,7 +6,7 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
 from typing import Optional, List
 
-from models import AnalyzeRequest, AnalysisResult, UserCreate, UserLogin, UserOut, Token, HistoryCreate, HistoryOut
+from models import AnalyzeRequest, AnalysisResult, UserCreate, UserLogin, UserOut, Token, HistoryCreate, HistoryOut, SearchResponse
 from analyzer import analyze
 from database import engine, get_db
 import db_models
@@ -142,3 +142,58 @@ def get_histories(
         query = query.order_by(attr.asc())
     
     return query.all()
+
+
+@app.get("/api/search", response_model=SearchResponse)
+def search_ticker(q: str):
+    logger.info(f"Search request: q='{q}'")
+    if not q:
+        return {"results": []}
+
+    import yfinance as yf
+    
+    results = []
+    # 銘柄名やコードで検索
+    try:
+        search = yf.Search(q, max_results=8)
+        raw_results = getattr(search, 'quotes', [])
+        
+        for r in raw_results:
+            symbol = r.get("symbol", "")
+            name = r.get("longname") or r.get("shortname") or symbol
+            exchange = r.get("exchange", "")
+            quote_type = r.get("quoteType", "")
+            
+            results.append({
+                "symbol": symbol,
+                "name": name,
+                "exchange": exchange,
+                "type": quote_type
+            })
+    except Exception as e:
+        logger.error(f"yfinance search failed for '{q}': {str(e)}")
+
+    # もし入力が4桁の数字なら、Yahoo!の検索結果に無くても .T を付けて候補に出す
+    import re
+    if re.match(r"^\d{4}$", q):
+        found_jp = any(r["symbol"] == f"{q}.T" for r in results)
+        if not found_jp:
+            results.insert(0, {
+                "symbol": f"{q}.T",
+                "name": f"日本株 {q}",
+                "exchange": "TSE",
+                "type": "EQUITY"
+            })
+
+    # 日本語が含まれていて、かつ検索結果が0件の場合、英語名での入力を促すヒントを出す
+    is_cjk = bool(re.search(r"[\u3000-\u30ff\u4e00-\u9faf]", q))
+    if not results and is_cjk:
+        results.append({
+            "symbol": "NOTICE",
+            "name": "日本語名での検索不可。会社名（英語）や銘柄コードを入力してください。",
+            "exchange": "HELP",
+            "type": "HINT"
+        })
+
+    logger.info(f"Found {len(results)} search results for '{q}'")
+    return {"results": results}

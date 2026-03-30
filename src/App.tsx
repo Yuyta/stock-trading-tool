@@ -8,7 +8,7 @@ import {
 import {
   ResponsiveContainer, ComposedChart, Area, XAxis, YAxis, Tooltip, CartesianGrid, Line, Legend
 } from 'recharts';
-import { AnalysisResult, AppSettings } from './types';
+import { AnalysisResult, AppSettings, SearchResult } from './types';
 import { SettingsModal } from './SettingsModal';
 import { useAuth } from './AuthContext';
 import { AuthModal } from './AuthModal';
@@ -84,6 +84,43 @@ export default function App() {
   const { user, token, logout } = useAuth();
   const [view, setView] = useState<'home' | 'history'>('home');
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
+  const [showSearchDropdown, setShowSearchDropdown] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  // オートコンプリートのデバウンス検索
+  useEffect(() => {
+    const timer = setTimeout(async () => {
+      if (symbol.length >= 2) {
+        try {
+          const resp = await fetch(`${API_BASE}/api/search?q=${encodeURIComponent(symbol)}`);
+          if (resp.ok) {
+            const data = await resp.json();
+            setSearchResults(data.results);
+            setShowSearchDropdown(data.results.length > 0);
+          }
+        } catch (e) {
+          console.error('Search error:', e);
+        }
+      } else {
+        setSearchResults([]);
+        setShowSearchDropdown(false);
+      }
+    }, 400);
+
+    return () => clearTimeout(timer);
+  }, [symbol]);
+
+  // クリック以外でドロップダウンを閉じるためのイベントリスナー
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setShowSearchDropdown(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
   useEffect(() => {
     fetch(`${API_BASE}/api/health`)
@@ -96,18 +133,29 @@ export default function App() {
     saveSettings(s);
   };
 
-  const handleAnalyze = async () => {
-    if (!symbol.trim()) return;
+  const handleAnalyze = async (overrideSymbol?: string) => {
+    let currentSymbol = overrideSymbol || symbol;
+
+    // もし入力がティッカー形式っぽくなく（例: 日本語）、かつ検索結果があれば筆頭を採用する
+    if (!overrideSymbol && searchResults.length > 0 && !/^\d{4}$|^[A-Z]{1,5}$/.test(currentSymbol)) {
+      if (searchResults[0].symbol !== 'NOTICE') {
+        currentSymbol = searchResults[0].symbol;
+        setSymbol(currentSymbol);
+      }
+    }
+
+    if (!currentSymbol.trim()) return;
     setIsAnalyzing(true);
     setResult(null);
     setError(null);
+    setShowSearchDropdown(false);
 
     try {
       const resp = await fetch(`${API_BASE}/api/analyze`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          symbol: symbol.trim().toUpperCase(),
+          symbol: currentSymbol.trim().toUpperCase(),
           timeframe,
           trade_style: tradeStyle,
           jquants_refresh_token: settings.jquantsRefreshToken || undefined,
@@ -117,6 +165,7 @@ export default function App() {
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
       const data: AnalysisResult = await resp.json();
       setResult(data);
+      setSymbol(data.symbol); // 正しいシンボル（例: 7867）に更新
 
       // ログイン中なら履歴を保存
       if (user && token) {
@@ -404,16 +453,55 @@ export default function App() {
                   <span>分析対象</span>
                 </div>
                 <div className="input-row">
-                  <div className="input-group">
-                    <span className="input-label">銘柄コード</span>
+                  <div className="input-group search-autocomplete-container" ref={dropdownRef}>
+                    <span className="input-label">銘柄コード / 企業名</span>
                     <input
                       type="text"
                       className="input"
                       value={symbol}
                       onChange={(e) => setSymbol(e.target.value)}
-                      onKeyDown={(e) => e.key === 'Enter' && handleAnalyze()}
-                      placeholder="例: AAPL, 7203, MSFT"
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          // もし検索結果があればその筆頭を選択、なければ今の入力をそのまま使う
+                          if (searchResults.length > 0) {
+                            const bestMatch = searchResults[0].symbol;
+                            setSymbol(bestMatch);
+                            handleAnalyze(bestMatch);
+                          } else {
+                            handleAnalyze();
+                          }
+                          setShowSearchDropdown(false);
+                        }
+                      }}
+                      onFocus={() => { if (searchResults.length > 0) setShowSearchDropdown(true); }}
+                      placeholder="例: Sony, 7203, AAPL"
+                      autoComplete="off"
                     />
+                    {showSearchDropdown && (
+                      <div className="search-dropdown glass-panel">
+                        {searchResults.map((res, i) => (
+                          <div
+                            key={`${res.symbol}-${i}`}
+                            className={`search-item ${res.symbol === 'NOTICE' ? 'search-hint' : ''}`}
+                            onClick={() => {
+                              if (res.symbol === 'NOTICE') return;
+                              setSymbol(res.symbol);
+                              setShowSearchDropdown(false);
+                              handleAnalyze(res.symbol);
+                            }}
+                          >
+                            <div className="search-item-primary">
+                              <span className="search-item-symbol">{res.symbol}</span>
+                              <span className="search-item-name">{res.name}</span>
+                            </div>
+                            <div className="search-item-secondary">
+                              <span className="search-item-exchange">{res.exchange}</span>
+                              {res.type && <span className="search-item-type">{res.type}</span>}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                   <div className="input-group">
                     <span className="input-label">トレードスタイル</span>
@@ -442,7 +530,7 @@ export default function App() {
                 </div>
                 <button
                   className="button"
-                  onClick={handleAnalyze}
+                  onClick={() => handleAnalyze()}
                   disabled={isAnalyzing || !symbol || backendOnline === false}
                 >
                   {isAnalyzing ? (
