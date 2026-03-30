@@ -73,4 +73,6 @@ erDiagram
     - `analysis_histories.symbol`: 特定の銘柄の過去履歴を素早く抽出するため。
     - `analysis_histories.symbol_name`: 企業名での検索を高速化するため。
 - **データ永続化**:
-    - `SQLite` を使用しているため、プロジェクト直下の `backend/stock_trading.db` にバックアップなしで直接保存されます。開発用であれば十分ですが、本番環境移行時は PostgreSQL 等への切り替えを推奨。
+    - **開発環境**: `SQLite` を使用し、`backend/stock_app.db` に保存されます。
+    - **本番環境**: **Supabase (PostgreSQL)** を使用します。環境変数 `DATABASE_URL` に接続文字列を設定することで自動切り替えが行われます。
+    - **自動変換**: Supabase が提供する `postgres://` 形式を、SQLAlchemy が要求する `postgresql://` 形式にサーバー起動時に自動変換して接続します。

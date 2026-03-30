@@ -9,13 +9,22 @@ backend/
 ├── main.py            # APIサーバーのエントリーポイント (FastAPI)
 ├── models.py          # Pydanticデータモデル (リクエスト/レスポンス型)
 ├── db_models.py       # SQLAlchemyデータベースモデル (User, History)
-├── database.py        # データベース接続設定 (SQLite)
+├── database.py        # データベース接続設定 (SQLite/PostgreSQL自動切替)
 ├── auth_utils.py      # 認証ユーティリティ (JWT, パスワードハッシュ)
 ├── analyzer.py        # 判定アルゴリズム・スコアリングロジックコア
 ├── data_fetcher.py    # 外部API（yfinance, J-Quants）データ収集
 ├── requirements.txt   # Python パッケージ依存関係
-└── stock_trading.db   # ローカルデータベース (自動生成)
+├── stock_app.db       # ローカルデータベース (SQLite/自動生成)
+└── render.yaml        # Render デプロイ用設定ファイル
 ```
+
+## 🚀 デプロイとインフラ構成
+
+本アプリケーションは、スケーラビリティとコスト（無料枠）のバランスを考慮し、以下の構成でデプロイ可能です。
+
+- **フロントエンド (Vercel)**: React (Vite) をホスティング。バックエンドURLは環境変数 `VITE_API_URL` で設定。
+- **バックエンド (Render)**: FastAPI サーバーをホスティング。`render.yaml` に基づき自動デプロイ。
+- **データベース (Supabase)**: マネージド PostgreSQL を使用。Render の無料枠制限を回避しつつ、データの永続化を実現。
 
 ## 📄 各ファイルの詳細説明
 
