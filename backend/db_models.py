@@ -11,6 +11,16 @@ class User(Base):
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
-# 将来的に履歴機能もここで定義できる
-# class History(Base):
-#    ...
+class AnalysisHistory(Base):
+    __tablename__ = "analysis_histories"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"))
+    symbol = Column(String, index=True)
+    trade_style = Column(String)
+    signal = Column(String)
+    total_score = Column(Float, nullable=True)
+    max_score = Column(Float)
+    analysis_mode = Column(String)
+    result_json = Column(String)  # JSON string of the full AnalysisResult
+    created_at = Column(DateTime(timezone=True), server_default=func.now())

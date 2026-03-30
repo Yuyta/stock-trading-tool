@@ -148,3 +148,29 @@ class AnalysisResult(BaseModel):
     risk: Optional[RiskInfo] = None
     chart_data: List[ChartDataPoint] = []
     error: Optional[str] = None
+
+
+class HistoryCreate(BaseModel):
+    symbol: str
+    trade_style: str
+    signal: str
+    total_score: Optional[float] = None
+    max_score: float
+    analysis_mode: str
+    result_json: str  # JSON string of AnalysisResult
+
+
+class HistoryOut(BaseModel):
+    id: int
+    user_id: int
+    symbol: str
+    trade_style: str
+    signal: str
+    total_score: Optional[float] = None
+    max_score: float
+    analysis_mode: str
+    result_json: str
+    created_at: datetime
+
+    class Config:
+        from_attributes = True

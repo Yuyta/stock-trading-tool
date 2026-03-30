@@ -4,9 +4,9 @@ from fastapi import FastAPI, Depends, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
-from typing import Optional
+from typing import Optional, List
 
-from models import AnalyzeRequest, AnalysisResult, UserCreate, UserLogin, UserOut, Token
+from models import AnalyzeRequest, AnalysisResult, UserCreate, UserLogin, UserOut, Token, HistoryCreate, HistoryOut
 from analyzer import analyze
 from database import engine, get_db
 import db_models
@@ -95,3 +95,50 @@ def read_me(current_user: Optional[db_models.User] = Depends(get_current_user)):
 @app.post("/api/analyze", response_model=AnalysisResult)
 def analyze_endpoint(request: AnalyzeRequest):
     return analyze(request)
+
+
+@app.post("/api/history", response_model=HistoryOut)
+def save_history(history: HistoryCreate, current_user: Optional[db_models.User] = Depends(get_current_user), db: Session = Depends(get_db)):
+    if current_user is None:
+        raise HTTPException(status_code=401, detail="認証が必要です")
+    
+    new_history = db_models.AnalysisHistory(
+        user_id=current_user.id,
+        symbol=history.symbol,
+        trade_style=history.trade_style,
+        signal=history.signal,
+        total_score=history.total_score,
+        max_score=history.max_score,
+        analysis_mode=history.analysis_mode,
+        result_json=history.result_json
+    )
+    db.add(new_history)
+    db.commit()
+    db.refresh(new_history)
+    return new_history
+
+
+@app.get("/api/history", response_model=List[HistoryOut])
+def get_histories(
+    symbol: Optional[str] = None,
+    sort_by: str = "created_at",
+    order: str = "desc",
+    current_user: Optional[db_models.User] = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    if current_user is None:
+        raise HTTPException(status_code=401, detail="認証が必要です")
+    
+    query = db.query(db_models.AnalysisHistory).filter(db_models.AnalysisHistory.user_id == current_user.id)
+    
+    if symbol:
+        query = query.filter(db_models.AnalysisHistory.symbol.ilike(f"%{symbol}%"))
+    
+    # ソート設定
+    attr = getattr(db_models.AnalysisHistory, sort_by, db_models.AnalysisHistory.created_at)
+    if order == "desc":
+        query = query.order_by(attr.desc())
+    else:
+        query = query.order_by(attr.asc())
+    
+    return query.all()

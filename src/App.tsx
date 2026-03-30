@@ -3,7 +3,7 @@ import { useState, useEffect, useRef } from 'react';
 import {
   Activity, BarChart3, Settings as SettingsIcon, PlayCircle, RefreshCw,
   TrendingUp, TrendingDown, Minus, ShieldCheck, ShieldAlert, ShieldX,
-  AlertCircle, ChevronRight, Server, Share2, Coins, LogIn, LogOut
+  AlertCircle, ChevronRight, Server, Share2, Coins, LogIn, LogOut, Clock
 } from 'lucide-react';
 import {
   ResponsiveContainer, ComposedChart, Area, XAxis, YAxis, Tooltip, CartesianGrid, Line, Legend
@@ -12,6 +12,7 @@ import { AnalysisResult, AppSettings } from './types';
 import { SettingsModal } from './SettingsModal';
 import { useAuth } from './AuthContext';
 import { AuthModal } from './AuthModal';
+import { History } from './History';
 import './App.css';
 
 const SETTINGS_KEY = 'stock_analyzer_settings';
@@ -80,7 +81,8 @@ export default function App() {
   const chartRef = useRef<HTMLDivElement>(null);
   const [isSharing, setIsSharing] = useState(false);
   const [showAuth, setShowAuth] = useState(false);
-  const { user, logout } = useAuth();
+  const { user, token, logout } = useAuth();
+  const [view, setView] = useState<'home' | 'history'>('home');
 
   useEffect(() => {
     fetch(`${API_BASE}/api/health`)
@@ -114,6 +116,30 @@ export default function App() {
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
       const data: AnalysisResult = await resp.json();
       setResult(data);
+
+      // ログイン中なら履歴を保存
+      if (user && token) {
+        try {
+          await fetch(`${API_BASE}/api/history`, {
+            method: 'POST',
+            headers: { 
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({
+              symbol: data.symbol,
+              trade_style: data.trade_style,
+              signal: data.signal,
+              total_score: data.total_score,
+              max_score: data.max_score,
+              analysis_mode: data.analysis_mode,
+              result_json: JSON.stringify(data)
+            }),
+          });
+        } catch (saveErr) {
+          console.error('Failed to save history:', saveErr);
+        }
+      }
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : '通信エラー');
     } finally {
@@ -325,11 +351,36 @@ export default function App() {
               <span>ログイン / 新規登録</span>
             </button>
           )}
+          {user && (
+            <button 
+              className={`button ${view === 'history' ? '' : 'secondary'}`} 
+              onClick={() => setView(view === 'home' ? 'history' : 'home')}
+              title={view === 'home' ? '判定履歴を表示' : '分析画面へ戻る'}
+            >
+              {view === 'home' ? <Clock size={18} /> : <BarChart3 size={18} />}
+              <span>{view === 'home' ? '履歴' : '分析'}</span>
+            </button>
+          )}
         </div>
       </header>
 
       <main className="main-content">
-        <div>
+        {view === 'history' ? (
+          <History 
+            onBack={() => setView('home')} 
+            onSelectDetail={(res) => {
+              setResult(res);
+              setView('home');
+              // スムーズに結果パネルへスクロール
+              setTimeout(() => {
+                const resultsPanel = document.querySelector('.result-panel');
+                resultsPanel?.scrollIntoView({ behavior: 'smooth' });
+              }, 100);
+            }} 
+          />
+        ) : (
+          <>
+            <div>
           <div className="card glass-panel animate-slide-in">
             <div className="card-header">
               <BarChart3 className="card-icon" />
@@ -751,6 +802,8 @@ export default function App() {
             </div>
           )}
         </div>
+        </>
+        )}
       </main>
     </div>
   );

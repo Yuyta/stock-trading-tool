@@ -132,3 +132,16 @@ export interface AuthState {
     token: string | null;
     isLoading: boolean;
 }
+
+export interface AnalysisHistory {
+    id: number;
+    user_id: number;
+    symbol: string;
+    trade_style: string;
+    signal: string;
+    total_score?: number;
+    max_score: number;
+    analysis_mode: string;
+    result_json: string;
+    created_at: string;
+}
