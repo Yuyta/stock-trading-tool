@@ -1,10 +1,11 @@
 import numpy as np
 import pandas as pd
 import logging
-from typing import Optional
+from typing import Optional, List, Dict, Any
 from models import (
     AnalyzeRequest, AnalysisResult, MacroResult,
     FundamentalResult, TechnicalResult, QualitativeResult, IncomeResult, RiskInfo,
+    AccumulationResult
 )
 from data_fetcher import fetch_price_history, fetch_macro_data, fetch_fundamentals, is_jp_stock
 
@@ -266,6 +267,13 @@ def analyze(request: AnalyzeRequest) -> AnalysisResult:
                 bollinger_lower=round(float(row["lower"]), 2) if not pd.isna(row["lower"]) else None,
             ))
 
+    # === Layer 6: Accumulation Detection ===
+    accumulation = None
+    try:
+        accumulation = _analyze_accumulation(price_df, fund_data, macro, request.trade_style, jp_stock, liquidity_ok)
+    except Exception as e:
+        logger.error(f"Error in _analyze_accumulation: {str(e)}")
+
     return AnalysisResult(
         symbol=symbol,
         symbol_name=fund_data.get("name") if fund_data else None,
@@ -279,6 +287,7 @@ def analyze(request: AnalyzeRequest) -> AnalysisResult:
         technical=technical,
         qualitative=qualitative,
         income=income,
+        accumulation=accumulation,
         risk=risk,
         chart_data=chart_data
     )
@@ -913,4 +922,252 @@ def _score_qualitative(fund_data: dict, gemini_api_key: Optional[str], trade_sty
         apply_news_count_modifier(result)
 
     return result
+
+
+def _analyze_accumulation(price_df, fund_data, macro, trade_style, jp_stock, liquidity_ok) -> Optional[AccumulationResult]:
+    # 1. Stoppers
+    reasons = []
+    stoppers = []
+    triggered_conditions = []
+    
+    closes = price_df["Close"]
+    volumes = price_df["Volume"] if "Volume" in price_df.columns else None
+    
+    # High drop check (60d)
+    if len(closes) >= 60:
+        high_60 = float(closes.tail(60).max())
+        if (float(closes.iloc[-1]) / high_60 - 1) * 100 < -20:
+            stoppers.append("直近高値から-20%以上下落")
+    
+    # Liquidity check
+    if liquidity_ok is False:
+        stoppers.append("低流動性銘柄")
+        
+    # Gap ±5% check
+    if len(closes) >= 2:
+        change = (float(closes.iloc[-1]) / float(closes.iloc[-2]) - 1) * 100
+        if abs(change) >= 5:
+            stoppers.append(f"大幅ギャップ発生 ({change:.1f}%)")
+            
+    # Volume decrease trend (VolMA5 < VolMA25 and 3-day continuous decrease)
+    if volumes is not None and len(volumes) >= 25:
+        vol_ma5 = volumes.rolling(5).mean()
+        vol_ma25 = volumes.rolling(25).mean()
+        v5 = float(vol_ma5.iloc[-1])
+        v25 = float(vol_ma25.iloc[-1])
+        # 3-day trend
+        if len(vol_ma5) >= 4:
+            is_falling = all(vol_ma5.iloc[i] < vol_ma5.iloc[i-1] for i in range(-1, -4, -1))
+            if v5 < v25 and is_falling:
+                stoppers.append("出来高減少トレンド")
+            
+    if stoppers:
+        return AccumulationResult(score=0, stopped=True, stoppers=stoppers, reasons=["ストッパー条件に該当したため、先回り検知を無効化しました。"])
+
+    # 2. Weights & Components
+    weights = {
+        "long_hold": {"div": 8, "sec": 6, "sqz": 4, "vol": 4, "tra": 4, "val": 14},
+        "swing":     {"div": 12, "sec": 8, "sqz": 6, "vol": 6, "tra": 6, "val": 2},
+        "day":       {"div": 10, "sec": 2, "sqz": 10, "vol": 12, "tra": 6, "val": 0},
+    }
+    w = weights.get(trade_style, weights["swing"])
+    
+    res = AccumulationResult()
+    valid_conditions_count = 6
+    if trade_style == "day": valid_conditions_count = 5 # val=0
+    
+    # EMA5, EMA20 etc for components
+    ema5 = closes.ewm(span=5, adjust=False).mean()
+    ema20 = closes.ewm(span=20, adjust=False).mean()
+    
+    # RSI for Divergence
+    delta = closes.diff()
+    gain = delta.clip(lower=0).rolling(14).mean()
+    loss = (-delta).clip(lower=0).rolling(14).mean()
+    rs = gain / (loss + 1e-9)
+    rsi_ser = 100 - 100 / (1 + rs)
+    
+    # ① ダイバージェンス
+    div_score = 0
+    if len(rsi_ser) >= 20:
+        curr_rsi = float(rsi_ser.iloc[-1])
+        if curr_rsi > 60:
+            valid_conditions_count -= 1
+        else:
+            # Price low (recent 20d)
+            price_tail = closes.tail(20)
+            p_low = float(price_tail.min())
+            low_idx = price_tail.idxmin()
+            rsi_at_low = float(rsi_ser.loc[low_idx])
+            
+            curr_p = float(closes.iloc[-1])
+            cond_a = (curr_p <= p_low) or (curr_p / p_low - 1 <= 0.03)
+            cond_b = (curr_rsi >= rsi_at_low + 5)
+            # RSI 3-point higher (3 continuous days increase)
+            cond_c = all(rsi_ser.iloc[i] > rsi_ser.iloc[i-1] for i in range(-1, -4, -1))
+            
+            if cond_a and cond_b and cond_c:
+                div_score = w["div"] * 1.0
+                triggered_conditions.append("ダイバージェンス")
+            elif cond_a and cond_b:
+                div_score = w["div"] * 0.6
+                triggered_conditions.append("ダイバージェンス (弱)")
+    else:
+        valid_conditions_count -= 1
+    res.divergence_score = div_score
+    
+    # ② セクター乖離
+    sec_score = 0
+    sector_name = fund_data.get("sector") if fund_data else None
+    macro_strong = macro.strong_sectors if hasattr(macro, 'strong_sectors') else []
+    if sector_name and macro_strong:
+        is_strong_sector = any(s.lower() in sector_name.lower() for s in macro_strong)
+        if len(closes) >= 20:
+            perf = (float(closes.iloc[-1]) / float(closes.iloc[-20]) - 1) * 100
+            if is_strong_sector and -3 <= perf <= 0:
+                sec_score = w["sec"] * 1.0
+                triggered_conditions.append("セクター乖離")
+    else:
+        valid_conditions_count -= 1
+    res.sector_gap_score = sec_score
+    
+    # ③ ボラティリティ収縮
+    sqz_score = 0
+    if len(closes) >= 30:
+        sma20 = closes.rolling(20).mean()
+        std20 = closes.rolling(20).std()
+        bandwidth = (std20 * 4) / sma20
+        bw_ma30 = bandwidth.rolling(30).mean()
+        
+        curr_bw = float(bandwidth.iloc[-1])
+        avg_bw = float(bw_ma30.iloc[-1])
+        
+        if curr_bw < avg_bw * 0.8:
+            sqz_days = 0
+            for i in range(-1, -min(len(bandwidth), 30), -1):
+                if bandwidth.iloc[i] < bw_ma30.iloc[i] * 0.8:
+                    sqz_days += 1
+                else: break
+            
+            if sqz_days >= 5:
+                sqz_score = w["sqz"] * 1.0
+                triggered_conditions.append("ボラ収縮 (強継続)")
+            elif sqz_days >= 3:
+                sqz_score = w["sqz"] * 0.5
+                triggered_conditions.append("ボラ収縮")
+    else:
+        valid_conditions_count -= 1
+    res.volatility_squeeze_score = sqz_score
+    
+    # ④ 出来高トレンド
+    vol_score = 0
+    if volumes is not None and len(volumes) >= 25:
+        is_invalid_vol = False
+        for i in range(-1, -min(len(volumes), 6), -1):
+            if volumes.iloc[i] > volumes.iloc[i-1] * 2:
+                is_invalid_vol = True
+                break
+        
+        if is_invalid_vol:
+            valid_conditions_count -= 1
+        else:
+            vol_ma5 = volumes.rolling(5).mean()
+            vol_ma25 = volumes.rolling(25).mean()
+            cond_a = float(vol_ma5.iloc[-1]) > float(vol_ma25.iloc[-1])
+            cond_b = all(vol_ma5.iloc[i] > vol_ma5.iloc[i-1] for i in range(-1, -4, -1))
+            
+            if cond_a and cond_b:
+                vol_score = w["vol"] * 1.0
+                triggered_conditions.append("出来高トレンド")
+            elif cond_a:
+                vol_score = w["vol"] * 0.4
+                triggered_conditions.append("出来高トレンド (弱)")
+    else:
+        valid_conditions_count -= 1
+    res.volume_trend_score = vol_score
+    
+    # ⑤ 初動トレンド
+    tra_score = 0
+    if len(closes) >= 20:
+        if all(ema5.iloc[i] > ema20.iloc[i] for i in range(-1, -4, -1)):
+            valid_conditions_count -= 1
+        else:
+            e5 = float(ema5.iloc[-1])
+            e20 = float(ema20.iloc[-1])
+            gap = abs(e5 / e20 - 1)
+            is_shrinking = all(abs(ema5.iloc[i] / ema20.iloc[i] - 1) < abs(ema5.iloc[i-1] / ema20.iloc[i-1] - 1) for i in range(-1, -4, -1))
+            
+            if gap < 0.01 or is_shrinking:
+                tra_score = w["tra"] * 1.0
+                triggered_conditions.append("初動トレンド (接近)")
+    else:
+        valid_conditions_count -= 1
+    res.early_trend_score = tra_score
+    
+    # ⑥ 割安成長
+    val_score = 0
+    if trade_style != "day":
+        per = fund_data.get("per")
+        growth = fund_data.get("op_income_growth_avg")
+        
+        if growth is not None and growth < -100:
+            valid_conditions_count -= 1
+        elif per is not None:
+            threshold = 15 if jp_stock else 20
+            cond_a = per < threshold
+            cond_b = growth is not None and growth > 10
+            
+            if cond_a and cond_b:
+                val_score = w["val"] * 1.0
+                triggered_conditions.append("割安成長")
+            elif cond_a:
+                val_score = w["val"] * 0.3
+                triggered_conditions.append("割安成長 (低PER)")
+            elif cond_b:
+                val_score = w["val"] * 0.3
+                triggered_conditions.append("割安成長 (高成長)")
+        else:
+            valid_conditions_count -= 1
+    res.value_growth_score = val_score
+    
+    # Combo Bonus
+    combo_bonus = 0
+    div_tr = any("ダイバージェンス" in c for c in triggered_conditions)
+    vol_tr = any("出来高トレンド" in c for c in triggered_conditions)
+    sqz_tr = any("ボラ収縮" in c for c in triggered_conditions)
+    
+    if div_tr and vol_tr:
+        combo_bonus += 3
+    if div_tr and vol_tr and sqz_tr:
+        combo_bonus += 3
+    res.combo_bonus = min(6, combo_bonus)
+    
+    # Total
+    total = sum([res.divergence_score, res.sector_gap_score, res.volatility_squeeze_score, res.volume_trend_score, res.early_trend_score, res.value_growth_score]) + res.combo_bonus
+    res.score = min(40, max(0, total))
+    
+    # Confidence
+    if valid_conditions_count > 0:
+        res.confidence = round((len(triggered_conditions) / valid_conditions_count) * 100, 1)
+    else:
+        res.confidence = 0
+        
+    # Signal Label
+    def _get_label(sc, style):
+        thr = {
+            "long_hold": [(28, "Strong"), (20, "候補"), (10, "監視")],
+            "swing":     [(30, "初動確定"), (22, "強候補"), (15, "監視")],
+            "day":       [(32, "即エントリー候補"), (24, "チャンス"), (15, "注意")],
+        }
+        for t, l in thr.get(style, thr["swing"]):
+            if sc >= t: return l
+        return None
+        
+    res.signal_label = _get_label(res.score, trade_style)
+    res.triggered_conditions = triggered_conditions
+    res.reasons = [f"先行スコア {res.score:.1f}/40" + (f" ({res.signal_label})" if res.signal_label else "")]
+    if res.combo_bonus > 0:
+        res.reasons.append(f"✅ コンボボーナス +{res.combo_bonus}適用")
+        
+    return res
 

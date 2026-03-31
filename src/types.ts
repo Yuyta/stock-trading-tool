@@ -89,6 +89,24 @@ export interface IncomeResult {
     reasons: string[];
 }
 
+export interface AccumulationResult {
+    score: number;
+    max_score: number;
+    confidence?: number;
+    signal_label?: string;
+    stopped: boolean;
+    divergence_score: number;
+    sector_gap_score: number;
+    volatility_squeeze_score: number;
+    volume_trend_score: number;
+    early_trend_score: number;
+    value_growth_score: number;
+    combo_bonus: number;
+    triggered_conditions: string[];
+    stoppers: string[];
+    reasons: string[];
+}
+
 export interface RiskInfo {
     liquidity_ok?: boolean;
     avg_daily_volume?: number;
@@ -112,6 +130,7 @@ export interface AnalysisResult {
     technical?: TechnicalResult;
     qualitative?: QualitativeResult;
     income?: IncomeResult;
+    accumulation?: AccumulationResult;
     risk?: RiskInfo;
     chart_data?: ChartDataPoint[];
     error?: string;

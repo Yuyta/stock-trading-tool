@@ -3,7 +3,8 @@ import { useState, useEffect, useRef } from 'react';
 import {
   Activity, BarChart3, Settings as SettingsIcon, PlayCircle, RefreshCw,
   TrendingUp, TrendingDown, Minus, ShieldCheck, ShieldAlert, ShieldX,
-  AlertCircle, ChevronRight, Server, Share2, Coins, LogIn, LogOut, Clock, Menu, X
+  AlertCircle, ChevronRight, Server, Share2, Coins, LogIn, LogOut, Clock, Menu, X,
+  Target, Zap
 } from 'lucide-react';
 import {
   ResponsiveContainer, ComposedChart, Area, XAxis, YAxis, Tooltip, CartesianGrid, Line, Legend
@@ -240,7 +241,7 @@ export default function App() {
       hour: '2-digit', minute: '2-digit'
     });
 
-    const { macro, fundamental, technical, qualitative, risk } = result;
+    const { macro, fundamental, technical, qualitative, accumulation, risk } = result;
     const styleLabelMap: Record<string, string> = {
       long_hold: '長期 (配当・インカム)',
       swing: '中長期 (スイング)',
@@ -288,6 +289,15 @@ export default function App() {
       summaryText += `■ 4. 定性・ニュース (スコア: ${qualitative.score}/${qualitative.max_score})\n` +
         `・根拠:\n ${qualitative.reasons.map(r => `  - ${r}`).join('\n')}\n` +
         `  (ソース: ${qualitative.data_source})\n\n`;
+    }
+
+    if (accumulation) {
+      summaryText += `■ 5. 先回り検知 (期待値スコア: ${accumulation.score}/${accumulation.max_score})\n` +
+        `・確信度: ${accumulation.confidence ?? '—'}%\n` +
+        `${accumulation.signal_label ? `・レベル: ${accumulation.signal_label}\n` : ''}` +
+        `・発火条件: ${accumulation.triggered_conditions.join(', ') || 'なし'}\n` +
+        `${accumulation.stopped ? `⚠️ 除外理由: ${accumulation.stoppers.join(', ')}\n` : ''}` +
+        `・根拠:\n ${accumulation.reasons.map(r => `  - ${r}`).join('\n')}\n\n`;
     }
 
     if (risk) {
@@ -885,6 +895,70 @@ export default function App() {
                           <li key={i}><ChevronRight size={13} />{r}</li>
                         ))}
                       </ul>
+                    </div>
+                  )}
+
+                  {/* Layer 6: Accumulation */}
+                  {result.accumulation && (
+                    <div className="score-section" style={{ borderLeft: '4px solid #FB7185' }}>
+                      <div className="score-section-header">
+                        <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                          <Target size={16} color="#FB7185" />
+                          Layer 6: 先回り検知 (アキュムレーション)
+                        </span>
+                        {!result.accumulation.stopped && (
+                          <span className="score-num" style={{ display: 'flex', alignItems: 'center' }}>
+                            {result.accumulation.signal_label && (
+                              <span style={{ 
+                                fontSize: '0.7rem', 
+                                background: '#FB7185', 
+                                color: 'white', 
+                                padding: '1px 6px', 
+                                borderRadius: '4px',
+                                marginRight: '0.5rem',
+                                fontWeight: 'bold'
+                              }}>
+                                {result.accumulation.signal_label}
+                              </span>
+                            )}
+                            {result.accumulation.score} / {result.accumulation.max_score}
+                          </span>
+                        )}
+                      </div>
+                      
+                      {result.accumulation.stopped ? (
+                        <div style={{ color: 'var(--danger)', fontSize: '0.85rem', padding: '0.5rem', background: 'rgba(239, 68, 68, 0.1)', borderRadius: '4px' }}>
+                          ⛔ 先回り検知 除外: {result.accumulation.stoppers.join(', ')}
+                        </div>
+                      ) : (
+                        <>
+                          <ScoreBar value={result.accumulation.score} max={result.accumulation.max_score} color="#FB7185" />
+                          <div className="kv-grid">
+                            <span>確信度 (条件発火率)</span>
+                            <span style={{ fontWeight: 'bold' }}>{result.accumulation.confidence?.toFixed(1)}%</span>
+                          </div>
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '0.8rem', marginBottom: '0.5rem' }}>
+                            {result.accumulation.triggered_conditions.map((tag: string, i: number) => (
+                              <span key={i} style={{ 
+                                fontSize: '0.65rem', 
+                                background: 'rgba(251, 113, 133, 0.15)', 
+                                color: '#FB7185', 
+                                border: '1px solid rgba(251, 113, 133, 0.3)',
+                                padding: '1px 8px', 
+                                borderRadius: '10px',
+                                fontWeight: '500'
+                              }}>
+                                {tag}
+                              </span>
+                            ))}
+                          </div>
+                          <ul className="reason-list">
+                            {result.accumulation.reasons.map((r: string, i: number) => (
+                              <li key={i}><Zap size={13} color="#FB7185" />{r}</li>
+                            ))}
+                          </ul>
+                        </>
+                      )}
                     </div>
                   )}
 

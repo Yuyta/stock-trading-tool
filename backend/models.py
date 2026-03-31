@@ -133,6 +133,31 @@ class RiskInfo(BaseModel):
     warnings: List[str] = []
 
 
+class AccumulationResult(BaseModel):
+    score: float = 0              # 先回りスコア (0〜40, クリップ済み)
+    max_score: float = 40
+    confidence: Optional[float] = None  # 確信度 (%) = 発火条件数 / 有効条件数
+    signal_label: Optional[str] = None  # モード別閾値に基づくラベル
+    stopped: bool = False               # ストッパー発動でスコア無効化されたか
+    
+    # 個別要素のスコア（各要素のウェイト適用後の値）
+    divergence_score: float = 0
+    sector_gap_score: float = 0
+    volatility_squeeze_score: float = 0
+    volume_trend_score: float = 0
+    early_trend_score: float = 0
+    value_growth_score: float = 0
+    
+    # ボーナス
+    combo_bonus: float = 0
+    
+    # 発火条件一覧（要素単位: "ダイバージェンス", "ボラ収縮" 等）
+    triggered_conditions: List[str] = []
+    # ストッパーで除外された理由
+    stoppers: List[str] = []
+    reasons: List[str] = []
+
+
 class AnalysisResult(BaseModel):
     symbol: str
     symbol_name: Optional[str] = None
@@ -146,6 +171,7 @@ class AnalysisResult(BaseModel):
     technical: Optional[TechnicalResult] = None
     qualitative: Optional[QualitativeResult] = None
     income: Optional[IncomeResult] = None
+    accumulation: Optional[AccumulationResult] = None  # Layer 6
     risk: Optional[RiskInfo] = None
     chart_data: List[ChartDataPoint] = []
     error: Optional[str] = None
