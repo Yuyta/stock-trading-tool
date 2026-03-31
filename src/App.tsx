@@ -904,7 +904,7 @@ export default function App() {
                       <div className="score-section-header">
                         <span style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
                           <Target size={16} color="#FB7185" />
-                          Layer 6: 先回り検知
+                          先回り検知
                           <span style={{ fontSize: '0.65rem', color: 'var(--text-secondary)', marginLeft: '0.2rem', fontWeight: 'normal', opacity: 0.8 }}>
                             (独立スコア・総合判定外)
                           </span>
