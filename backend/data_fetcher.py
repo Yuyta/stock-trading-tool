@@ -186,10 +186,11 @@ def _fetch_yfinance_fundamentals(symbol: str) -> Dict[str, Any]:
         # -------------------------
         # ニュース
         # -------------------------
+        news_headlines = []
         try:
             news = ticker.news
             if news:
-                result["news_headlines"] = [
+                news_headlines = [
                     n.get("content", {}).get("title", "")
                     or n.get("title", "")
                     for n in news[:10]
@@ -200,10 +201,34 @@ def _fetch_yfinance_fundamentals(symbol: str) -> Dict[str, Any]:
                 result["news_count_24h"] = recent_count
         except Exception as e:
             logger.error(f"Error fetching news for {symbol}: {str(e)}")
-            pass
+
+        # ニュースが取れなかった場合の代替(RSS等)
+        if not news_headlines:
+            try:
+                # 日本株ならYahooファイナンスのRSS、外国株ならGoogleニュース等の簡易検索
+                fallback_url = ""
+                if is_jp_stock(symbol):
+                    code = symbol.split(".")[0]
+                    fallback_url = f"https://news.google.com/rss/search?q={code}+stock+news&hl=ja&gl=JP&ceid=JP:ja"
+                else:
+                    fallback_url = f"https://news.google.com/rss/search?q={symbol}+stock&hl=en-US&gl=US&ceid=US:en"
+                
+                if fallback_url:
+                    resp = requests.get(fallback_url, timeout=5)
+                    if resp.ok:
+                        import re
+                        titles = re.findall(r"<title>(.*?)</title>", resp.text)
+                        # 最初の1つはRSS自体のタイトルなので飛ばす
+                        if len(titles) > 1:
+                            news_headlines = titles[1:11]
+                            result["news_count_24h"] = len(news_headlines) # 簡易的なカウント
+            except Exception as e:
+                logger.warning(f"Fallback news fetch failed for {symbol}: {str(e)}")
+
+        result["news_headlines"] = news_headlines
+
     except Exception as e:
         logger.error(f"Final error in _fetch_yfinance_fundamentals for {symbol}: {str(e)}")
-        pass
     return result
 
 

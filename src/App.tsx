@@ -87,9 +87,16 @@ export default function App() {
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [showSearchDropdown, setShowSearchDropdown] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  // ドロップダウンから選択直後フラグ（検索トリガーを防ぐ）
+  const justSelectedRef = useRef(false);
 
   // オートコンプリートのデバウンス検索
   useEffect(() => {
+    // ドロップダウン選択直後はスキップ（再表示防止）
+    if (justSelectedRef.current) {
+      justSelectedRef.current = false;
+      return;
+    }
     const timer = setTimeout(async () => {
       if (symbol.length >= 2) {
         try {
@@ -474,7 +481,12 @@ export default function App() {
                           setShowSearchDropdown(false);
                         }
                       }}
-                      onFocus={() => { if (searchResults.length > 0) setShowSearchDropdown(true); }}
+                      onFocus={() => {
+                        // 選択直後のフォーカスイベントでは再表示しない
+                        if (!justSelectedRef.current && searchResults.length > 0) {
+                          setShowSearchDropdown(true);
+                        }
+                      }}
                       placeholder="例: Sony, 7203, AAPL"
                       autoComplete="off"
                     />
@@ -486,9 +498,11 @@ export default function App() {
                             className={`search-item ${res.symbol === 'NOTICE' ? 'search-hint' : ''}`}
                             onClick={() => {
                               if (res.symbol === 'NOTICE') return;
+                              // 選択フラグを立てて再検索・再表示を防ぐ
+                              justSelectedRef.current = true;
                               setSymbol(res.symbol);
                               setShowSearchDropdown(false);
-                              handleAnalyze(res.symbol);
+                              // 自動分析はしない。ユーザーが「自動判定を開始」ボタンを押す
                             }}
                           >
                             <div className="search-item-primary">

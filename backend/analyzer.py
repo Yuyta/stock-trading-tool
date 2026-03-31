@@ -824,19 +824,34 @@ def _score_qualitative(fund_data: dict, gemini_api_key: Optional[str], trade_sty
     result.max_score = max_score
     
     def run_keyword_fallback(error_msg: str):
-        result.data_source = "キーワード(エラー切替)"
-        neg_count = sum(1 for h in headlines for kw in ["下方修正", "減配", "赤字", "不祥事"] if kw in h)
-        pos_count = sum(1 for h in headlines for kw in ["上方修正", "増配", "最高益", "好決算"] if kw in h)
+        result.data_source = "簡易キーワード判定"
+        # キーワードの定義 (拡充版)
+        neg_kw = ["不祥事", "下方修正", "赤字", "倒産", "減配", "無配", "悪化", "疑惑", "特設注意", "告発", "不適切", "scandal", "fraud", "bankruptcy", "downgrade", "warning", "recall", "investigation", "dividend cut", "deficit"]
+        pos_kw = ["増益", "上方修正", "最高益", "好決算", "増配", "最高配", "株主還元", "自社株買い", "復配", "向上", "強気", "業務提携", "資本提携", "新製品", "承認", "受注", "growth", "upgrade", "record", "beat", "strong", "dividend", "buyback", "shareholder return", "partnership", "approved"]
+
+        hits_neg = [kw for kw in neg_kw if any(kw.lower() in h.lower() for h in headlines)]
+        hits_pos = [kw for kw in pos_kw if any(kw.lower() in h.lower() for h in headlines)]
+        
+        neg_count = sum(1 for h in headlines for kw in neg_kw if kw.lower() in h.lower())
+        pos_count = sum(1 for h in headlines for kw in pos_kw if kw.lower() in h.lower())
+
         if neg_count > pos_count:
-            result.score = max(0.0, kw_base - neg_count * kw_neg_penalty); result.sentiment = "negative"
-            result.reasons.append(f"⚠️ API制限のためキーワード判定: {neg_count}件負")
+            result.score = max(0.0, kw_base - neg_count * kw_neg_penalty)
+            result.sentiment = "negative"
+            kw_str = ", ".join(list(set(hits_neg)))
+            result.reasons.append(f"⚠️ API制限/エラーのためキーワード判定: 悪材料検知({kw_str})")
         elif pos_count > 0:
-            result.score = min(max_score, kw_base + pos_count * kw_pos_bonus); result.sentiment = "positive"
-            result.reasons.append(f"✅ API制限のためキーワード判定: {pos_count}件正")
+            result.score = min(max_score, kw_base + pos_count * kw_pos_bonus)
+            result.sentiment = "positive"
+            kw_str = ", ".join(list(set(hits_pos)))
+            result.reasons.append(f"✅ API制限/エラーのためキーワード判定: 好材料検知({kw_str})")
         else:
-            result.score = kw_base; result.sentiment = "neutral"
-            result.reasons.append("➖ API制限のためキーワード判定（中立）")
-        result.reasons.append(f"エラー詳細: {error_msg[:40]}...")
+            result.score = kw_base
+            result.sentiment = "neutral"
+            result.reasons.append("➖ API制限/エラーのためキーワード判定: 中立（主要ワード検知なし）")
+        
+        # エラーの詳細も理由に含める
+        result.reasons.append(f"（エラー詳細: {error_msg[:30]}...）")
 
     try:
         from google import genai
