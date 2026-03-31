@@ -902,9 +902,12 @@ export default function App() {
                   {result.accumulation && (
                     <div className="score-section" style={{ borderLeft: '4px solid #FB7185' }}>
                       <div className="score-section-header">
-                        <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        <span style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
                           <Target size={16} color="#FB7185" />
-                          Layer 6: 先回り検知 (アキュムレーション)
+                          Layer 6: 先回り検知
+                          <span style={{ fontSize: '0.65rem', color: 'var(--text-secondary)', marginLeft: '0.2rem', fontWeight: 'normal', opacity: 0.8 }}>
+                            (独立スコア・総合判定外)
+                          </span>
                         </span>
                         {!result.accumulation.stopped && (
                           <span className="score-num" style={{ display: 'flex', alignItems: 'center' }}>
