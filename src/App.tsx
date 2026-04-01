@@ -4,7 +4,7 @@ import {
   Activity, BarChart3, Settings as SettingsIcon, PlayCircle, RefreshCw,
   TrendingUp, TrendingDown, Minus, ShieldCheck, ShieldAlert, ShieldX,
   AlertCircle, ChevronRight, Server, Share2, Coins, LogIn, LogOut, Clock, Menu, X,
-  Target, Zap
+  Target, Zap, ExternalLink
 } from 'lucide-react';
 import {
   ResponsiveContainer, ComposedChart, Area, XAxis, YAxis, Tooltip, CartesianGrid, Line, Legend
@@ -434,6 +434,17 @@ export default function App() {
                 <button className="menu-item" onClick={() => { setShowSettings(true); setIsMenuOpen(false); }}>
                   <SettingsIcon size={18} />
                   <span>設定</span>
+                </button>
+
+                <button
+                  className="menu-item"
+                  onClick={() => {
+                    window.open('https://yuyta.github.io/stock-trading-tool-user-guide/', '_blank', 'noopener,noreferrer');
+                    setIsMenuOpen(false);
+                  }}
+                >
+                  <ExternalLink size={18} />
+                  <span>ユーザーマニュアル</span>
                 </button>
 
                 {user && (
