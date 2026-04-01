@@ -156,6 +156,12 @@ class AccumulationResult(BaseModel):
     # ストッパーで除外された理由
     stoppers: List[str] = []
     reasons: List[str] = []
+    
+    # 信頼性・分析用フラグ
+    is_reliable: bool = True     # 3項目以上のヒット
+    has_funda: bool = False      # ファンダ系項目の有無
+    has_supply: bool = False     # 需給系項目の有無
+    score_momentum: float = 0    # 前日比スコア変化 (推定)
 
 
 class AnalysisResult(BaseModel):
@@ -175,6 +181,13 @@ class AnalysisResult(BaseModel):
     risk: Optional[RiskInfo] = None
     chart_data: List[ChartDataPoint] = []
     error: Optional[str] = None
+
+    # 統合判定用追加フィールド
+    l3_l6_divergence: bool = False  # L3とL6の大きな乖離
+    is_near_earnings: bool = False  # 決算間近フラグ
+    sector_flow_match: Optional[bool] = None # セクター資金流入一致
+    reliability_rating: str = "normal" # high, normal, low
+    prev_signal: Optional[str] = None
 
 
 class SearchResult(BaseModel):

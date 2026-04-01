@@ -751,13 +751,21 @@ export default function App() {
                     <div>
                       <div className="signal-text">{result.signal}</div>
                       {result.total_score != null && result.max_score > 0 && (
-                        <div className="score-badge" style={{ borderColor: getSignalColor(result.signal) }}>
-                          {result.total_score} / {result.max_score} <span style={{ fontSize: '0.7em', marginLeft: '6px', fontWeight: 'normal' }}>({result.analysis_mode})</span>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                          <div className="score-badge" style={{ borderColor: getSignalColor(result.signal) }}>
+                            {result.total_score} / {result.max_score} <span style={{ fontSize: '0.7em', marginLeft: '6px', fontWeight: 'normal' }}>({result.analysis_mode})</span>
+                          </div>
+                          {result.reliability_rating === 'high' && <span className="tag" style={{ background: 'rgba(52, 211, 153, 0.2)', color: '#34d399', border: '1px solid rgba(52, 211, 153, 0.4)' }}>✨ 高信頼度</span>}
+                          {result.reliability_rating === 'low' && <span className="tag" style={{ background: 'rgba(239, 68, 68, 0.2)', color: '#ef4444', border: '1px solid rgba(239, 68, 68, 0.4)' }}>⚠️ 低信頼度</span>}
+                          {result.l3_l6_divergence && <span className="tag" style={{ background: 'rgba(251, 113, 133, 0.2)', color: '#fb7185', border: '1px solid rgba(251, 113, 133, 0.4)' }}>🔄 乖離リスク</span>}
                         </div>
                       )}
                       {/* 判定時のトレードスタイル表示 */}
-                      <div style={{ marginTop: '6px' }}>
-                        <span className="tag">判定スタイル: {result.trade_style === 'long_hold' ? '長期 (配当・インカム)' : result.trade_style === 'day' ? '短期 (デイトレ)' : '中長期 (スイング)'}</span>
+                      <div style={{ marginTop: '6px', display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                        <span className="tag">スタイル: {result.trade_style === 'long_hold' ? '長期' : result.trade_style === 'day' ? '短期' : '中長期'}</span>
+                        {result.is_near_earnings && <span className="tag danger-tag" style={{ fontWeight: 'bold' }}>📅 決算間近</span>}
+                        {result.sector_flow_match === true && <span className="tag" style={{ background: '#34d399', color: 'white', border: 'none' }}>🎯 セクター一致</span>}
+                        {result.sector_flow_match === false && <span className="tag" style={{ background: '#ef4444', color: 'white', border: 'none' }}>❄️ セクター逆風</span>}
                       </div>
                     </div>
                   </div>
@@ -905,9 +913,6 @@ export default function App() {
                         <span style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
                           <Target size={16} color="#FB7185" />
                           先回り検知
-                          <span style={{ fontSize: '0.65rem', color: 'var(--text-secondary)', marginLeft: '0.2rem', fontWeight: 'normal', opacity: 0.8 }}>
-                            (独立スコア・総合判定外)
-                          </span>
                         </span>
                         {!result.accumulation.stopped && (
                           <span className="score-num" style={{ display: 'flex', alignItems: 'center' }}>
@@ -939,6 +944,12 @@ export default function App() {
                           <div className="kv-grid">
                             <span>確信度 (条件発火率)</span>
                             <span style={{ fontWeight: 'bold' }}>{result.accumulation.confidence?.toFixed(1)}%</span>
+                            <span>スコア方向性</span>
+                            <span style={{ color: result.accumulation.score_momentum > 0 ? '#34d399' : result.accumulation.score_momentum < 0 ? '#fb7185' : 'inherit' }}>
+                              {result.accumulation.score_momentum > 0 ? `▲ 加速 (+${result.accumulation.score_momentum.toFixed(1)})` : 
+                               result.accumulation.score_momentum < 0 ? `▼ 減速 (${result.accumulation.score_momentum.toFixed(1)})` : 
+                               '変化なし'}
+                            </span>
                           </div>
                           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '0.8rem', marginBottom: '0.5rem' }}>
                             {result.accumulation.triggered_conditions.map((tag: string, i: number) => (

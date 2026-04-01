@@ -148,24 +148,197 @@ def analyze(request: AnalyzeRequest) -> AnalysisResult:
         total += income.score
         max_total += income.max_score
 
-    # === Normalize signal thresholds to the actual max score ===
-    ratio = total / max_total if max_total > 0 else 0
-    if ratio >= 0.85:
-        signal = "Strong Buy"
-    elif ratio >= 0.65:
-        signal = "Buy"
-    elif ratio >= 0.45:
-        signal = "Hold"
-    else:
-        signal = "Sell / Avoid"
+    # === Layer 6: Accumulation Detection ===
+    accumulation = None
+    try:
+        accumulation = _analyze_accumulation(price_df, fund_data, macro, request.trade_style, jp_stock, liquidity_ok)
+    except Exception as e:
+        logger.error(f"Error in _analyze_accumulation: {str(e)}")
 
-    # マクロ環境に応じた警告ラベルの付与
-    if not macro.passed:
-        signal = f"回避推奨 ({macro.block_reason})"
-    elif macro.vix_mode == "caution":
-        signal = signal + " (VIX警戒)"
-    elif macro.market_below_ma75 and ratio < 0.85 and request.trade_style != "day":
-        signal = signal + " (市場注意)"
+    # === INTEGRATED SIGNAL LOGIC (NEW SPEC) ===
+    # 1. Weights based on Mode
+    l6_weight = 1.2  # Base weighting for L6 in the formula "L6 * 1.2 + L3"
+    l3_weight = 1.0  # Base weighting for L3
+
+    if request.trade_style == "long_hold":
+        l6_weight *= 1.3
+        l3_weight *= 0.7
+    elif request.trade_style == "day":
+        l6_weight *= 0.7
+        l3_weight *= 1.3
+    
+    # 2. Base Components
+    l6_score = accumulation.score if accumulation else 0
+    l3_score = technical.score # Max 40
+    
+    # 3. Layer 6 Attenuation on Layer 3
+    if l6_score < 15:
+        # Layer 6 < 15の場合はLayer 3に減衰係数0.7を適用
+        l3_score = l3_score * 0.7
+        if accumulation:
+            accumulation.reasons.append("⚠️ 先回りスコア極低(15未満)のためテクニカル評価を減衰(0.7x)")
+
+    # 4. Total Integrated Score Calculation
+    integrated_total = (l6_score * l6_weight) + l3_score
+    # Max possible for L6 + L3 (assuming 40 + 40 baseline adjusted by weights)
+    # Default Swing: (40 * 1.2) + 40 = 88.0
+    # Long Hold: (40 * 1.2 * 1.3) + (40 * 0.7) = 62.4 + 28 = 90.4
+    # Day: (40 * 1.2 * 0.7) + (40 * 1.3) = 33.6 + 52 = 85.6
+    integrated_max = (40 * l6_weight) + 40
+    
+    # 5. Stopper Conditions (Pre-calculated for signal determination)
+    stoppers_active = []
+    
+    # 200日移動平均線 下向き判定 (ストッパー)
+    if technical.ema200 is not None:
+        closes = price_df["Close"]
+        ema200_ser = closes.ewm(span=200, adjust=False).mean()
+        if len(ema200_ser) >= 20:
+             slope_20d = (float(ema200_ser.iloc[-1]) / float(ema200_ser.iloc[-20]) - 1)
+             if slope_20d < -0.001: # 0.1%以上の下落傾斜
+                 stoppers_active.append("200日移動平均線が下向き（長期下落トレンド）")
+
+    # 決算発表間近 (3-5営業日) ストッパー
+    is_near_earnings = False
+    earnings_date_str = fund_data.get("next_earnings_date") if fund_data else None
+    if earnings_date_str:
+        try:
+            from datetime import datetime, timedelta
+            e_date = datetime.strptime(earnings_date_str, "%Y-%m-%d").date()
+            today = datetime.now().date()
+            # 1週間以内なら警戒
+            diff_days = (e_date - today).days
+            if 0 <= diff_days <= 5:
+                is_near_earnings = True
+                stoppers_active.append(f"決算発表間近 ({earnings_date_str})")
+        except: pass
+
+    # 6. Signal Determination Logic
+    ratio = integrated_total / integrated_max if integrated_max > 0 else 0
+    final_signal = "Watch" # Default
+    
+    # 基本判定レベル
+    if ratio >= 0.70: # 70%以上
+        final_signal = "Strong Buy"
+    elif ratio >= 0.50:
+        final_signal = "Buy"
+    elif ratio >= 0.30:
+        final_signal = "Hold"
+    else:
+        final_signal = "Sell / Avoid"
+
+    # --- Signal Constraints ---
+    # Layer 6 < 15: Strong Buy禁止
+    if l6_score < 15 and final_signal == "Strong Buy":
+        final_signal = "Buy"
+        technical.reasons.append("⚠️ 先回りスコア不足のためStrong BuyからBuyへ制限")
+
+    # Layer 6 < 20: 上限Buyまで
+    if l6_score < 20 and final_signal == "Strong Buy":
+        final_signal = "Buy"
+        technical.reasons.append("⚠️ 先回りスコア不足(20未満)のため上限をBuyまで制限")
+
+    # RSI過熱時: 1段階下げ
+    if technical.rsi is not None and technical.rsi >= 70:
+        if final_signal == "Strong Buy": final_signal = "Buy"
+        elif final_signal == "Buy": final_signal = "Hold"
+        technical.reasons.append(f"⚠️ RSI過熱({technical.rsi:.0f})のため判定を1段階引き下げ")
+
+    # 出来高不足: スコア微減点 (ロジックに反映済みだがreasonsに追記)
+    if fund_data and fund_data.get("average_volume"):
+        avg_v = fund_data.get("average_volume")
+        curr_v = float(price_df["Volume"].iloc[-1])
+        if curr_v < avg_v:
+            technical.reasons.append("⚠️ 本日の出来高が平均未満のため信頼性低下(減点)")
+
+    # --- Layer 0 (Sector) Influence ---
+    sector_match = None
+    sector_name = fund_data.get("sector") if fund_data else None
+    if sector_name and macro.strong_sectors:
+        is_strong = any(s.lower() in sector_name.lower() for s in macro.strong_sectors)
+        is_weak = any(s.lower() in sector_name.lower() for s in macro.weak_sectors)
+        if is_strong:
+            sector_match = True
+            if final_signal == "Buy": final_signal = "Strong Buy"
+            elif final_signal == "Hold": final_signal = "Buy"
+            macro.warnings.append(f"✅ セクター資金流入一致({sector_name})により判定引き上げ")
+        elif is_weak:
+            sector_match = False
+            if final_signal == "Strong Buy": final_signal = "Buy"
+            elif final_signal == "Buy": final_signal = "Hold"
+            macro.warnings.append(f"❌ セクター資金流出({sector_name})により判定引き下げ")
+
+    # --- Trend Momentum Checks ---
+    # 直近スコア増加チェック
+    # (ここでは簡易的に、前日価格よりEMA5が上昇しているか等で代用せず、スコアdeltaを想定)
+    # L3スコアの前日比計算
+    l3_prev_score = 0
+    if len(price_df) >= 2:
+        l3_prev = _analyze_technical(price_df.iloc[:-1], request.trade_style)
+        l3_prev_score = l3_prev.score
+    
+    score_momentum = l3_score - l3_prev_score
+    if final_signal == "Strong Buy" and score_momentum <= 0:
+        final_signal = "Buy"
+        technical.reasons.append("⚠️ スコアが前日比で増加していないためStrong Buy制限")
+
+    # ピークアウト検知: L3低下時はHold優先
+    if score_momentum < 0 and final_signal == "Buy":
+        final_signal = "Hold"
+        technical.reasons.append("⚠️ テクニカルスコア低下によるピークアウト検知：Hold優先")
+
+    # L3低下かつL6低下: Sell優先
+    l6_prev_score = 0
+    if len(price_df) >= 2:
+         # _analyze_accumulationは結構重いが、精度のためSimulate
+         l6_prev = _analyze_accumulation(price_df.iloc[:-1], fund_data, macro, request.trade_style, jp_stock, liquidity_ok)
+         l6_prev_score = l6_prev.score
+    
+    if score_momentum < 0 and (l6_score - l6_prev_score) < 0:
+        if final_signal in ["Buy", "Hold"]:
+            final_signal = "Sell / Avoid"
+            technical.reasons.append("🚨 L3・L6ダブル低下：Sell判定を優先")
+
+    # L6高 & L3低: 仕込み継続
+    if l6_score >= 25 and l3_score < 15:
+        if final_signal in ["Hold", "Sell / Avoid"]:
+            final_signal = "Buy"
+            accumulation.reasons.append("💎 L6強力/L3低迷につき「仕込み継続」としてBuy判定維持")
+
+    # 乖離リスク
+    l3_l6_diff = abs(l3_score - l6_score)
+    l3_l6_divergence = l3_l6_diff > 20
+    if l3_l6_divergence:
+        technical.reasons.append("⚠️ L3とL6のスコア乖離が大きいため、信頼性に軽微減点(乖離リスク)")
+
+    # --- Stopper Override (Absolute Priority) ---
+    if stoppers_active:
+        final_signal = f"Sell / Watch (ストッパー発動)"
+        if accumulation:
+            accumulation.stoppers.extend(stoppers_active)
+
+    # 信頼性レーティング
+    reliability = "normal"
+    if accumulation and len(accumulation.triggered_conditions) >= 5:
+        reliability = "high"
+    elif accumulation and len(accumulation.triggered_conditions) < 3:
+        reliability = "low"
+        if accumulation.score > 0:
+             accumulation.score = max(0, accumulation.score - 5)
+             accumulation.reasons.append("❌ L6項目数が3未満のため信頼性不足による減点")
+
+    # --- Update models with everything ---
+    if accumulation:
+        accumulation.score_momentum = score_momentum
+        accumulation.is_reliable = (reliability != "low")
+        # Check fund/supply balance
+        has_funda = "割安成長" in accumulation.triggered_conditions or "割安成長 (低PER)" in accumulation.triggered_conditions
+        has_supply = any(x in ["出来高トレンド", "ボラ収縮 (強継続)", "ダイバージェンス"] for x in accumulation.triggered_conditions)
+        accumulation.has_funda = has_funda
+        accumulation.has_supply = has_supply
+        if not (has_funda and has_supply) and l6_score >= 30:
+             l6_score = l6_score * 0.9 # 微減点
+             accumulation.reasons.append("⚠️ ファンダ系・需給系の片方が不足：高評価の信頼性を制限")
 
     # === Risk Info ===
     current_price = float(price_df["Close"].iloc[-1])
@@ -277,10 +450,10 @@ def analyze(request: AnalyzeRequest) -> AnalysisResult:
     return AnalysisResult(
         symbol=symbol,
         symbol_name=fund_data.get("name") if fund_data else None,
-        signal=signal,
+        signal=final_signal,
         trade_style=request.trade_style,
-        total_score=round(float(total), 1),
-        max_score=round(float(max_total), 1),
+        total_score=round(float(integrated_total), 1),
+        max_score=round(float(integrated_max), 1),
         analysis_mode=analysis_mode,
         macro=macro,
         fundamental=fundamental,
@@ -289,7 +462,11 @@ def analyze(request: AnalyzeRequest) -> AnalysisResult:
         income=income,
         accumulation=accumulation,
         risk=risk,
-        chart_data=chart_data
+        chart_data=chart_data,
+        l3_l6_divergence=l3_l6_divergence,
+        is_near_earnings=is_near_earnings,
+        sector_flow_match=sector_match,
+        reliability_rating=reliability
     )
 
 

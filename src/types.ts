@@ -105,6 +105,10 @@ export interface AccumulationResult {
     triggered_conditions: string[];
     stoppers: string[];
     reasons: string[];
+    is_reliable: boolean;
+    has_funda: boolean;
+    has_supply: boolean;
+    score_momentum: number;
 }
 
 export interface RiskInfo {
@@ -134,6 +138,11 @@ export interface AnalysisResult {
     risk?: RiskInfo;
     chart_data?: ChartDataPoint[];
     error?: string;
+    l3_l6_divergence: boolean;
+    is_near_earnings: boolean;
+    sector_flow_match?: boolean;
+    reliability_rating: string;
+    prev_signal?: string;
 }
 
 export interface AppSettings {

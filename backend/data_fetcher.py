@@ -227,6 +227,20 @@ def _fetch_yfinance_fundamentals(symbol: str) -> Dict[str, Any]:
 
         result["news_headlines"] = news_headlines
 
+        # -------------------------
+        # 決算日 (Earnings Date)
+        # -------------------------
+        try:
+            cal = ticker.get_calendar()
+            if cal is not None and "Earnings Date" in cal:
+                e_dates = cal["Earnings Date"]
+                if isinstance(e_dates, list) and len(e_dates) > 0:
+                    result["next_earnings_date"] = e_dates[0].strftime("%Y-%m-%d") if hasattr(e_dates[0], "strftime") else str(e_dates[0])
+                elif hasattr(e_dates, "iloc") and not e_dates.empty:
+                    result["next_earnings_date"] = e_dates.iloc[0].strftime("%Y-%m-%d") if hasattr(e_dates.iloc[0], "strftime") else str(e_dates.iloc[0])
+        except Exception as e:
+            logger.debug(f"Earnings date not available for {symbol}: {str(e)}")
+
     except Exception as e:
         logger.error(f"Final error in _fetch_yfinance_fundamentals for {symbol}: {str(e)}")
     return result
