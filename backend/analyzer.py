@@ -176,7 +176,7 @@ def analyze(request: AnalyzeRequest) -> AnalysisResult:
         # Layer 6 < 15の場合はLayer 3に減衰係数0.7を適用
         l3_score = l3_score * 0.7
         if accumulation:
-            accumulation.reasons.append("⚠️ 先回りスコア極低(15未満)のためテクニカル評価を減衰(0.7x)")
+            accumulation.reasons.append("⚠️ 先回り検知スコアが極めて低い(15未満)ため、テクニカル評価を0.7倍に減衰させています")
 
     # 4. Total Integrated Score Calculation
     integrated_total = (l6_score * l6_weight) + l3_score
@@ -297,19 +297,19 @@ def analyze(request: AnalyzeRequest) -> AnalysisResult:
     if score_momentum < 0 and (l6_score - l6_prev_score) < 0:
         if final_signal in ["Buy", "Hold"]:
             final_signal = "Sell / Avoid"
-            technical.reasons.append("🚨 L3・L6ダブル低下：Sell判定を優先")
+            technical.reasons.append("🚨 テクニカル・先回り検知の両方が低下傾向：Sell判定を優先")
 
     # L6高 & L3低: 仕込み継続
     if l6_score >= 25 and l3_score < 15:
         if final_signal in ["Hold", "Sell / Avoid"]:
             final_signal = "Buy"
-            accumulation.reasons.append("💎 L6強力/L3低迷につき「仕込み継続」としてBuy判定維持")
+            accumulation.reasons.append("💎 先回り検知が強力、かつテクニカルが低迷しているため「仕込み継続」として分析")
 
     # 乖離リスク
     l3_l6_diff = abs(l3_score - l6_score)
     l3_l6_divergence = l3_l6_diff > 20
     if l3_l6_divergence:
-        technical.reasons.append("⚠️ L3とL6のスコア乖離が大きいため、信頼性に軽微減点(乖離リスク)")
+        technical.reasons.append("⚠️ テクニカルと先回り検知のスコア乖離が大きいため、信頼性に軽微減点(解離リスク)")
 
     # --- Stopper Override (Absolute Priority) ---
     if stoppers_active:
@@ -325,7 +325,7 @@ def analyze(request: AnalyzeRequest) -> AnalysisResult:
         reliability = "low"
         if accumulation.score > 0:
              accumulation.score = max(0, accumulation.score - 5)
-             accumulation.reasons.append("❌ L6項目数が3未満のため信頼性不足による減点")
+             accumulation.reasons.append("❌ 先回り検知の該当項目数が3未満のため、信頼性不足による減点")
 
     # --- Update models with everything ---
     if accumulation:
@@ -440,12 +440,7 @@ def analyze(request: AnalyzeRequest) -> AnalysisResult:
                 bollinger_lower=round(float(row["lower"]), 2) if not pd.isna(row["lower"]) else None,
             ))
 
-    # === Layer 6: Accumulation Detection ===
-    accumulation = None
-    try:
-        accumulation = _analyze_accumulation(price_df, fund_data, macro, request.trade_style, jp_stock, liquidity_ok)
-    except Exception as e:
-        logger.error(f"Error in _analyze_accumulation: {str(e)}")
+
 
     return AnalysisResult(
         symbol=symbol,
@@ -1186,9 +1181,11 @@ def _analyze_accumulation(price_df, fund_data, macro, trade_style, jp_stock, liq
             if cond_a and cond_b and cond_c:
                 div_score = w["div"] * 1.0
                 triggered_conditions.append("ダイバージェンス")
+                res.reasons.append("✅ 価格の安値更新に対しRSIが上昇（強気ダイバージェンス）")
             elif cond_a and cond_b:
                 div_score = w["div"] * 0.6
                 triggered_conditions.append("ダイバージェンス (弱)")
+                res.reasons.append("⚠️ RSIの底打ち傾向を検知（軽微なダイバージェンス）")
     else:
         valid_conditions_count -= 1
     res.divergence_score = div_score
@@ -1204,6 +1201,7 @@ def _analyze_accumulation(price_df, fund_data, macro, trade_style, jp_stock, liq
             if is_strong_sector and -3 <= perf <= 0:
                 sec_score = w["sec"] * 1.0
                 triggered_conditions.append("セクター乖離")
+                res.reasons.append(f"✅ セクター({sector_name})は上昇しているが、個別株はまだ押し目圏内で出遅れ")
     else:
         valid_conditions_count -= 1
     res.sector_gap_score = sec_score
@@ -1229,9 +1227,11 @@ def _analyze_accumulation(price_df, fund_data, macro, trade_style, jp_stock, liq
             if sqz_days >= 5:
                 sqz_score = w["sqz"] * 1.0
                 triggered_conditions.append("ボラ収縮 (強継続)")
+                res.reasons.append(f"✅ ボラティリティが極限まで収縮（{sqz_days}日間）。大幅な値動きの前兆")
             elif sqz_days >= 3:
                 sqz_score = w["sqz"] * 0.5
                 triggered_conditions.append("ボラ収縮")
+                res.reasons.append("⚠️ ボラティリティの低下傾向。パワーが蓄積されつつある状態")
     else:
         valid_conditions_count -= 1
     res.volatility_squeeze_score = sqz_score
@@ -1256,9 +1256,11 @@ def _analyze_accumulation(price_df, fund_data, macro, trade_style, jp_stock, liq
             if cond_a and cond_b:
                 vol_score = w["vol"] * 1.0
                 triggered_conditions.append("出来高トレンド")
+                res.reasons.append("✅ 出来高が徐々に増加し、スマートマネーの流入が示唆される")
             elif cond_a:
                 vol_score = w["vol"] * 0.4
                 triggered_conditions.append("出来高トレンド (弱)")
+                res.reasons.append("⚠️ 平均以上の出来高が継続中（需給好転の兆し）")
     else:
         valid_conditions_count -= 1
     res.volume_trend_score = vol_score
@@ -1277,6 +1279,7 @@ def _analyze_accumulation(price_df, fund_data, macro, trade_style, jp_stock, liq
             if gap < 0.01 or is_shrinking:
                 tra_score = w["tra"] * 1.0
                 triggered_conditions.append("初動トレンド (接近)")
+                res.reasons.append("✅ 短期・中期移動平均線が収束。トレンド転換の初動リスクが低い")
     else:
         valid_conditions_count -= 1
     res.early_trend_score = tra_score
@@ -1297,12 +1300,15 @@ def _analyze_accumulation(price_df, fund_data, macro, trade_style, jp_stock, liq
             if cond_a and cond_b:
                 val_score = w["val"] * 1.0
                 triggered_conditions.append("割安成長")
+                res.reasons.append(f"✅ 低PER({per:.1f})かつ高成長({growth:.1f}%)の「割安成長」銘柄")
             elif cond_a:
                 val_score = w["val"] * 0.3
                 triggered_conditions.append("割安成長 (低PER)")
+                res.reasons.append(f"✅ 財務的に割安圏内 (PER: {per:.1f})")
             elif cond_b:
                 val_score = w["val"] * 0.3
                 triggered_conditions.append("割安成長 (高成長)")
+                res.reasons.append(f"✅ 高い営業利益成長率 ({growth:.1f}%) を維持")
         else:
             valid_conditions_count -= 1
     res.value_growth_score = val_score
@@ -1342,7 +1348,7 @@ def _analyze_accumulation(price_df, fund_data, macro, trade_style, jp_stock, liq
         
     res.signal_label = _get_label(res.score, trade_style)
     res.triggered_conditions = triggered_conditions
-    res.reasons = [f"先行スコア {res.score:.1f}/40" + (f" ({res.signal_label})" if res.signal_label else "")]
+
     if res.combo_bonus > 0:
         res.reasons.append(f"✅ コンボボーナス +{res.combo_bonus}適用")
         

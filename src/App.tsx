@@ -773,7 +773,7 @@ export default function App() {
                           </div>
                           {result.reliability_rating === 'high' && <span className="tag" style={{ background: 'rgba(52, 211, 153, 0.2)', color: '#34d399', border: '1px solid rgba(52, 211, 153, 0.4)' }}>✨ 高信頼度</span>}
                           {result.reliability_rating === 'low' && <span className="tag" style={{ background: 'rgba(239, 68, 68, 0.2)', color: '#ef4444', border: '1px solid rgba(239, 68, 68, 0.4)' }}>⚠️ 低信頼度</span>}
-                          {result.l3_l6_divergence && <span className="tag" style={{ background: 'rgba(251, 113, 133, 0.2)', color: '#fb7185', border: '1px solid rgba(251, 113, 133, 0.4)' }}>🔄 乖離リスク</span>}
+                          {result.l3_l6_divergence && <span className="tag" style={{ background: 'rgba(251, 113, 133, 0.2)', color: '#fb7185', border: '1px solid rgba(251, 113, 133, 0.4)' }}>🔄 スコア解離注意</span>}
                         </div>
                       )}
                       {/* 判定時のトレードスタイル表示 */}
