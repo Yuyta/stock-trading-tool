@@ -144,11 +144,14 @@ export default function App() {
   const handleAnalyze = async (overrideSymbol?: string) => {
     let currentSymbol = overrideSymbol || symbol;
 
-    // もし入力がティッカー形式っぽくなく（例: 日本語）、かつ検索結果があれば筆頭を採用する
-    if (!overrideSymbol && searchResults.length > 0 && !/^\d{4}$|^[A-Z]{1,5}$/.test(currentSymbol)) {
+    // もし入力が空でなく、かつティッカー形式（数字、英字、ドット、ハイフン）っぽくない場合（例: 日本語名）
+    // かつ検索結果があれば筆頭を採用する
+    const isTickerLike = /^[\w\d\.-]+$/i.test(currentSymbol);
+    if (!overrideSymbol && currentSymbol.trim() && !isTickerLike && searchResults.length > 0) {
       if (searchResults[0].symbol !== 'NOTICE') {
         currentSymbol = searchResults[0].symbol;
         setSymbol(currentSymbol);
+        setSearchResults([]); // 解決したのでクリア
       }
     }
 
@@ -499,7 +502,8 @@ export default function App() {
                           } else {
                             handleAnalyze();
                           }
-                          setShowSearchDropdown(false);
+                            setSearchResults([]);
+                            setShowSearchDropdown(false);
                         }
                       }}
                       onFocus={() => {
@@ -522,8 +526,9 @@ export default function App() {
                               // 選択フラグを立てて再検索・再表示を防ぐ
                               justSelectedRef.current = true;
                               setSymbol(res.symbol);
+                              setSearchResults([]);
                               setShowSearchDropdown(false);
-                              // 自動分析はしない。ユーザーが「自動判定を開始」ボタンを押す
+                              // 選択フラグを立てて再検索・再表示を防ぐ
                             }}
                           >
                             <div className="search-item-primary">
