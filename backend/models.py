@@ -45,8 +45,9 @@ class ChartDataPoint(BaseModel):
     time: str
     price: float
     # 可視化用指標 (Overlay)
-    ema5: Optional[float] = None
+    ema9: Optional[float] = None
     ema20: Optional[float] = None
+    ema50: Optional[float] = None
     ema75: Optional[float] = None
     ema200: Optional[float] = None
     bollinger_upper: Optional[float] = None
@@ -85,8 +86,9 @@ class FundamentalResult(BaseModel):
 
 class TechnicalResult(BaseModel):
     score: float = 0
-    ema5: Optional[float] = None
+    ema9: Optional[float] = None
     ema20: Optional[float] = None
+    ema50: Optional[float] = None
     ema75: Optional[float] = None
     ema200: Optional[float] = None
     current_price: Optional[float] = None

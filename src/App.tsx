@@ -284,7 +284,10 @@ export default function App() {
         `・MACD: ${technical.macd ?? '—'} (Sig: ${technical.macd_signal ?? '—'})\n` +
         `・VWAP: ${technical.vwap?.toLocaleString() ?? '—'} / 出来高比: ${technical.volume_ratio ?? '—'}x\n` +
         `・ボリンジャー: ${technical.bollinger_lower?.toLocaleString() ?? '—'} - ${technical.bollinger_upper?.toLocaleString() ?? '—'}\n` +
-        `・EMA: [5] ${technical.ema5?.toLocaleString() ?? '—'} [20] ${technical.ema20?.toLocaleString() ?? '—'} [75] ${technical.ema75?.toLocaleString() ?? '—'}\n` +
+        `・EMA: ${result.trade_style === 'day' ? `[9] ${technical.ema9?.toLocaleString() ?? '—'} [20] ${technical.ema20?.toLocaleString() ?? '—'} [50] ${technical.ema50?.toLocaleString() ?? '—'}` :
+          result.trade_style === 'swing' ? `[20] ${technical.ema20?.toLocaleString() ?? '—'} [50] ${technical.ema50?.toLocaleString() ?? '—'} [200] ${technical.ema200?.toLocaleString() ?? '—'}` :
+            `[200] ${technical.ema200?.toLocaleString() ?? '—'}`
+        }\n` +
         `・根拠:\n ${technical.reasons.map(r => `  - ${r}`).join('\n')}\n\n`;
     }
 
@@ -436,7 +439,7 @@ export default function App() {
 
                 <button className="menu-item" onClick={() => { setShowSettings(true); setIsMenuOpen(false); }}>
                   <SettingsIcon size={18} />
-                  <span>設定</span>
+                  <span>API設定</span>
                 </button>
 
                 <button
@@ -502,8 +505,8 @@ export default function App() {
                           } else {
                             handleAnalyze();
                           }
-                            setSearchResults([]);
-                            setShowSearchDropdown(false);
+                          setSearchResults([]);
+                          setShowSearchDropdown(false);
                         }
                       }}
                       onFocus={() => {
@@ -626,12 +629,21 @@ export default function App() {
                         <Area type="monotone" dataKey="price" stroke={getSignalColor(result.signal)} fillOpacity={1} fill="url(#colorPrice)" name="価格" />
 
                         {/* トレードスタイルに応じた指標表示 */}
-                        {result.trade_style !== 'long_hold' && (
-                          <Line type="monotone" dataKey="ema5" stroke="#fcd34d" strokeWidth={2} dot={false} name="5日" />
+                        {result.trade_style === 'day' && (
+                          <>
+                            <Line type="monotone" dataKey="ema9" stroke="#fcd34d" strokeWidth={2} dot={false} name="9日" />
+                            <Line type="monotone" dataKey="ema20" stroke="#fb923c" strokeWidth={2} dot={false} name="20日" />
+                            <Line type="monotone" dataKey="ema50" stroke="#a855f7" strokeWidth={2} dot={false} name="50日" />
+                          </>
                         )}
-                        <Line type="monotone" dataKey="ema20" stroke="#fb923c" strokeWidth={2} dot={false} name="20日" />
-                        <Line type="monotone" dataKey="ema75" stroke="#a855f7" strokeWidth={2} dot={false} name="75日" />
-                        {result.trade_style !== 'day' && (
+                        {result.trade_style === 'swing' && (
+                          <>
+                            <Line type="monotone" dataKey="ema20" stroke="#fb923c" strokeWidth={2} dot={false} name="20日" />
+                            <Line type="monotone" dataKey="ema50" stroke="#a855f7" strokeWidth={2} dot={false} name="50日" />
+                            <Line type="monotone" dataKey="ema200" stroke="#0ea5e9" strokeWidth={2} dot={false} name="200日" />
+                          </>
+                        )}
+                        {result.trade_style === 'long_hold' && (
                           <Line type="monotone" dataKey="ema200" stroke="#0ea5e9" strokeWidth={2} dot={false} name="200日" />
                         )}
 
@@ -682,24 +694,42 @@ export default function App() {
                     <div className="metric-card">
                       <span className="metric-title">指数平滑移動平均 (EMA)</span>
                       <div className="metric-value" style={{ fontSize: '0.75rem', display: 'flex', flexDirection: 'column', gap: '2px', marginTop: '4px' }}>
-                        {result.trade_style !== 'long_hold' && (
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                            <span style={{ width: '8px', height: '2px', background: '#fcd34d', flexShrink: 0 }} />
-                            <span>5日: {result.technical.ema5?.toLocaleString() ?? '—'}</span>
-                          </div>
+                        {result.trade_style === 'day' && (
+                          <>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                              <span style={{ width: '8px', height: '2px', background: '#fcd34d', flexShrink: 0 }} />
+                              <span>9日: {result.technical.ema9?.toLocaleString() ?? '—'}</span>
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                              <span style={{ width: '8px', height: '2px', background: '#fb923c', flexShrink: 0 }} />
+                              <span>20日: {result.technical.ema20?.toLocaleString() ?? '—'}</span>
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                              <span style={{ width: '8px', height: '2px', background: '#a855f7', flexShrink: 0 }} />
+                              <span>50日: {result.technical.ema50?.toLocaleString() ?? '—'}</span>
+                            </div>
+                          </>
                         )}
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                          <span style={{ width: '8px', height: '2px', background: '#fb923c', flexShrink: 0 }} />
-                          <span>20日: {result.technical.ema20?.toLocaleString() ?? '—'}</span>
-                        </div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                          <span style={{ width: '8px', height: '2px', background: '#a855f7', flexShrink: 0 }} />
-                          <span>75日: {result.technical.ema75?.toLocaleString() ?? '—'}</span>
-                        </div>
-                        {result.trade_style !== 'day' && result.technical.ema200 != null && (
+                        {result.trade_style === 'swing' && (
+                          <>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                              <span style={{ width: '8px', height: '2px', background: '#fb923c', flexShrink: 0 }} />
+                              <span>20日: {result.technical.ema20?.toLocaleString() ?? '—'}</span>
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                              <span style={{ width: '8px', height: '2px', background: '#a855f7', flexShrink: 0 }} />
+                              <span>50日: {result.technical.ema50?.toLocaleString() ?? '—'}</span>
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                              <span style={{ width: '8px', height: '2px', background: '#0ea5e9', flexShrink: 0 }} />
+                              <span>200日: {result.technical.ema200?.toLocaleString() ?? '—'}</span>
+                            </div>
+                          </>
+                        )}
+                        {result.trade_style === 'long_hold' && (
                           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                             <span style={{ width: '8px', height: '2px', background: '#0ea5e9', flexShrink: 0 }} />
-                            <span>200日: {result.technical.ema200.toLocaleString()}</span>
+                            <span>200日: {result.technical.ema200?.toLocaleString() ?? '—'}</span>
                           </div>
                         )}
                       </div>
@@ -933,11 +963,11 @@ export default function App() {
                         {!result.accumulation.stopped && (
                           <span className="score-num" style={{ display: 'flex', alignItems: 'center' }}>
                             {result.accumulation.signal_label && (
-                              <span style={{ 
-                                fontSize: '0.7rem', 
-                                background: '#FB7185', 
-                                color: 'white', 
-                                padding: '1px 6px', 
+                              <span style={{
+                                fontSize: '0.7rem',
+                                background: '#FB7185',
+                                color: 'white',
+                                padding: '1px 6px',
                                 borderRadius: '4px',
                                 marginRight: '0.5rem',
                                 fontWeight: 'bold'
@@ -949,7 +979,7 @@ export default function App() {
                           </span>
                         )}
                       </div>
-                      
+
                       {result.accumulation.stopped ? (
                         <div style={{ color: 'var(--danger)', fontSize: '0.85rem', padding: '0.5rem', background: 'rgba(239, 68, 68, 0.1)', borderRadius: '4px' }}>
                           ⛔ 先回り検知 除外: {result.accumulation.stoppers.join(', ')}
@@ -962,19 +992,19 @@ export default function App() {
                             <span style={{ fontWeight: 'bold' }}>{result.accumulation.confidence?.toFixed(1)}%</span>
                             <span>スコア方向性</span>
                             <span style={{ color: result.accumulation.score_momentum > 0 ? '#34d399' : result.accumulation.score_momentum < 0 ? '#fb7185' : 'inherit' }}>
-                              {result.accumulation.score_momentum > 0 ? `▲ 加速 (+${result.accumulation.score_momentum.toFixed(1)})` : 
-                               result.accumulation.score_momentum < 0 ? `▼ 減速 (${result.accumulation.score_momentum.toFixed(1)})` : 
-                               '変化なし'}
+                              {result.accumulation.score_momentum > 0 ? `▲ 加速 (+${result.accumulation.score_momentum.toFixed(1)})` :
+                                result.accumulation.score_momentum < 0 ? `▼ 減速 (${result.accumulation.score_momentum.toFixed(1)})` :
+                                  '変化なし'}
                             </span>
                           </div>
                           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '0.8rem', marginBottom: '0.5rem' }}>
                             {result.accumulation.triggered_conditions.map((tag: string, i: number) => (
-                              <span key={i} style={{ 
-                                fontSize: '0.65rem', 
-                                background: 'rgba(251, 113, 133, 0.15)', 
-                                color: '#FB7185', 
+                              <span key={i} style={{
+                                fontSize: '0.65rem',
+                                background: 'rgba(251, 113, 133, 0.15)',
+                                color: '#FB7185',
                                 border: '1px solid rgba(251, 113, 133, 0.3)',
-                                padding: '1px 8px', 
+                                padding: '1px 8px',
                                 borderRadius: '10px',
                                 fontWeight: '500'
                               }}>

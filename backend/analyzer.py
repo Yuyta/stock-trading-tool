@@ -189,14 +189,24 @@ def analyze(request: AnalyzeRequest) -> AnalysisResult:
     # 5. Stopper Conditions (Pre-calculated for signal determination)
     stoppers_active = []
     
-    # 200日移動平均線 下向き判定 (ストッパー)
-    if technical.ema200 is not None:
-        closes = price_df["Close"]
-        ema200_ser = closes.ewm(span=200, adjust=False).mean()
-        if len(ema200_ser) >= 20:
-             slope_20d = (float(ema200_ser.iloc[-1]) / float(ema200_ser.iloc[-20]) - 1)
-             if slope_20d < -0.001: # 0.1%以上の下落傾斜
-                 stoppers_active.append("200日移動平均線が下向き（長期下落トレンド）")
+    # トレードスタイルに応じたEMAストッパー判定
+    if request.trade_style == "long_hold":
+        # 長期：200日線ストッパー
+        if technical.ema200 is not None:
+             ema200_ser = price_df["Close"].ewm(span=200, adjust=False).mean()
+             if len(ema200_ser) >= 20:
+                  slope_20d = (float(ema200_ser.iloc[-1]) / float(ema200_ser.iloc[-20]) - 1)
+                  if slope_20d < -0.001: # 0.1%以上の下落傾斜
+                      stoppers_active.append("200日移動平均線が下向き（長期下落トレンド）")
+    elif request.trade_style == "swing":
+        # スイング：75日線ストッパー
+        if technical.ema75 is not None:
+             ema75_ser = price_df["Close"].ewm(span=75, adjust=False).mean()
+             if len(ema75_ser) >= 20:
+                  slope_20d = (float(ema75_ser.iloc[-1]) / float(ema75_ser.iloc[-20]) - 1)
+                  if slope_20d < -0.001:
+                      stoppers_active.append("75日移動平均線が下向き（中期下落回避）")
+    # デイトレはストッパーなし
 
     # 決算発表間近 (3-5営業日) ストッパー
     is_near_earnings = False
@@ -402,8 +412,9 @@ def analyze(request: AnalyzeRequest) -> AnalysisResult:
     if price_df is not None and not price_df.empty:
         # 指標の計算 (チャート表示用)
         closes = price_df["Close"]
-        ema5_ser = closes.ewm(span=5, adjust=False).mean()
+        ema9_ser = closes.ewm(span=9, adjust=False).mean()
         ema20_ser = closes.ewm(span=20, adjust=False).mean()
+        ema50_ser = closes.ewm(span=50, adjust=False).mean()
         ema75_ser = closes.ewm(span=75, adjust=False).mean()
         ema200_ser = closes.ewm(span=200, adjust=False).mean() if len(closes) >= 200 else None
         sma20 = closes.rolling(window=20).mean()
@@ -414,8 +425,9 @@ def analyze(request: AnalyzeRequest) -> AnalysisResult:
         # 結合して tail を取得
         df_all = pd.DataFrame({
             "Close": closes,
-            "ema5": ema5_ser,
+            "ema9": ema9_ser,
             "ema20": ema20_ser,
+            "ema50": ema50_ser,
             "ema75": ema75_ser,
             "ema200": ema200_ser if ema200_ser is not None else [float('nan')] * len(closes),
             "upper": upper_ser,
@@ -432,8 +444,9 @@ def analyze(request: AnalyzeRequest) -> AnalysisResult:
             chart_data.append(ChartDataPoint(
                 time=time_str, 
                 price=round(float(row["Close"]), 2),
-                ema5=round(float(row["ema5"]), 2) if not pd.isna(row["ema5"]) else None,
+                ema9=round(float(row["ema9"]), 2) if not pd.isna(row["ema9"]) else None,
                 ema20=round(float(row["ema20"]), 2) if not pd.isna(row["ema20"]) else None,
+                ema50=round(float(row["ema50"]), 2) if not pd.isna(row["ema50"]) else None,
                 ema75=round(float(row["ema75"]), 2) if not pd.isna(row["ema75"]) else None,
                 ema200=round(float(row["ema200"]), 2) if not pd.isna(row["ema200"]) else None,
                 bollinger_upper=round(float(row["upper"]), 2) if not pd.isna(row["upper"]) else None,
@@ -580,27 +593,30 @@ def _analyze_technical(price_df: pd.DataFrame, trade_style: str) -> TechnicalRes
         result.current_price = round(cur, 2)
 
         # EMA Calculation
-        ema5 = closes.ewm(span=5, adjust=False).mean()
+        ema9 = closes.ewm(span=9, adjust=False).mean()
         ema20 = closes.ewm(span=20, adjust=False).mean()
+        ema50 = closes.ewm(span=50, adjust=False).mean()
         ema75 = closes.ewm(span=75, adjust=False).mean()
         ema200 = closes.ewm(span=200, adjust=False).mean() if len(closes) >= 200 else ema75
         
-        e5 = float(ema5.iloc[-1])
+        e9 = float(ema9.iloc[-1])
         e20 = float(ema20.iloc[-1])
+        e50 = float(ema50.iloc[-1])
         e75 = float(ema75.iloc[-1])
         e200 = float(ema200.iloc[-1])
         
-        result.ema5 = round(e5, 2)
+        result.ema9 = round(e9, 2)
         result.ema20 = round(e20, 2)
+        result.ema50 = round(e50, 2)
         result.ema75 = round(e75, 2)
         result.ema200 = round(e200, 2) if len(closes) >= 200 else None
         result.above_ema75 = cur > e75
 
-        # Golden Cross check (5 crosses 20)
-        if len(ema5) >= 2:
-            prev_e5 = float(ema5.iloc[-2])
+        # Golden Cross check (9 crosses 20)
+        if len(ema9) >= 2:
+            prev_e9 = float(ema9.iloc[-2])
             prev_e20 = float(ema20.iloc[-2])
-            result.golden_cross = (prev_e5 <= prev_e20) and (e5 > e20)
+            result.golden_cross = (prev_e9 <= prev_e20) and (e9 > e20)
 
         # =====================================================
         # Relative Strength
@@ -649,14 +665,24 @@ def _analyze_technical(price_df: pd.DataFrame, trade_style: str) -> TechnicalRes
                 score -= 5
                 reasons.append("❌ 200日線下（長期下落トレンド）")
         else:
-            if e5 > e20 and cur > e75:
-                score += 15
-                reasons.append("✅ 強い上昇トレンド")
-            elif e5 > e20:
-                score += 8
-                reasons.append("⚠️ 短期上昇")
-            elif cur < e75:
-                reasons.append("❌ 長期トレンド下落中")
+            if trade_style == "day":
+                if e9 > e20 and cur > e50:
+                    score += 15
+                    reasons.append("✅ 強い上昇トレンド(短期逆指値)")
+                elif e9 > e20:
+                    score += 8
+                    reasons.append("⚠️ 短期上昇傾向")
+                elif cur < e50:
+                    reasons.append("❌ 中期トレンド下落中")
+            else: # swing
+                if e20 > e50 and cur > e200:
+                    score += 15
+                    reasons.append("✅ 強い上昇トレンド(スイング)")
+                elif e20 > e50:
+                    score += 8
+                    reasons.append("⚠️ 中期上昇傾向")
+                elif cur < e200:
+                    reasons.append("❌ 長期トレンド下落中")
 
         # =====================================================
         # RSI
