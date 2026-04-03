@@ -875,10 +875,10 @@ export default function App() {
                         <span className="tag" style={{ border: 'none', background: 'rgba(255,255,255,0.1)' }}>ソース: {result.fundamental.data_source}</span>
                       </div>
                       <div className="kv-grid">
-                        {result.fundamental.per != null && <><span>PER</span><span>{result.fundamental.per}倍</span></>}
-                        {result.fundamental.pbr != null && <><span>PBR</span><span>{result.fundamental.pbr}倍</span></>}
-                        {result.fundamental.roe != null && <><span>ROE</span><span>{result.fundamental.roe}%</span></>}
-                        {result.fundamental.op_income_growth_avg != null && <><span>営業利益成長</span><span>{result.fundamental.op_income_growth_avg}%</span></>}
+                        {result.fundamental.per != null && <><span>PER</span><span>{result.fundamental.per.toFixed(1)}倍</span></>}
+                        {result.fundamental.pbr != null && <><span>PBR</span><span>{result.fundamental.pbr.toFixed(2)}倍</span></>}
+                        {result.fundamental.roe != null && <><span>ROE</span><span>{result.fundamental.roe.toFixed(1)}%</span></>}
+                        {result.fundamental.op_income_growth_avg != null && <><span>営業利益成長</span><span>{result.fundamental.op_income_growth_avg.toFixed(1)}%</span></>}
                       </div>
                       <ul className="reason-list">
                         {result.fundamental.reasons.map((r, i) => (
@@ -939,10 +939,10 @@ export default function App() {
                       </div>
                       <ScoreBar value={result.income.score} max={result.income.max_score} color="#FCD34D" />
                       <div className="kv-grid">
-                        {result.income.dividend_yield != null && <><span>配当利回り</span><span>{result.income.dividend_yield}%</span></>}
-                        {result.income.five_year_avg_yield != null && <><span>5年平均利回り</span><span>{result.income.five_year_avg_yield}%</span></>}
-                        {result.income.payout_ratio != null && <><span>配当性向</span><span>{result.income.payout_ratio}%</span></>}
-                        {result.income.graham_number != null && <><span>グレアム指数</span><span>{result.income.graham_number}</span></>}
+                        {result.income.dividend_yield != null && <><span>配当利回り</span><span>{result.income.dividend_yield.toFixed(2)}%</span></>}
+                        {result.income.five_year_avg_yield != null && <><span>5年平均利回り</span><span>{result.income.five_year_avg_yield.toFixed(2)}%</span></>}
+                        {result.income.payout_ratio != null && <><span>配当性向</span><span>{result.income.payout_ratio.toFixed(1)}%</span></>}
+                        {result.income.graham_number != null && <><span>グレアム指数</span><span>{result.income.graham_number.toFixed(2)}</span></>}
                       </div>
                       <ul className="reason-list">
                         {result.income.reasons.map((r, i) => (

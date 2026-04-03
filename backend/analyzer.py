@@ -36,6 +36,9 @@ def analyze(request: AnalyzeRequest) -> AnalysisResult:
 
     # === Fetch price history ===
     price_df = fetch_price_history(symbol, request.timeframe)
+    if price_df is not None and not price_df.empty:
+        price_df = price_df.dropna(subset=['Close'])
+
     if price_df is None or price_df.empty:
         return AnalysisResult(
             symbol=symbol, signal="見送り",
@@ -398,10 +401,10 @@ def analyze(request: AnalyzeRequest) -> AnalysisResult:
     else:
         risk = RiskInfo(
             liquidity_ok=liquidity_ok,
-            avg_daily_volume=float(avg_vol) if avg_vol is not None else None,
-            trailing_stop_base=round(float(current_price * 0.93), 2),
+            avg_daily_volume=float(avg_vol) if avg_vol is not None and not pd.isna(avg_vol) else None,
+            trailing_stop_base=round(float(current_price * 0.93), 2) if not pd.isna(current_price) else None,
             trailing_stop_base_label="損切り目安(−7%)",
-            trailing_stop_high=round(float(high_60d * 0.90), 2),
+            trailing_stop_high=round(float(high_60d * 0.90), 2) if not pd.isna(high_60d) else None,
             trailing_stop_high_label="高値から−10%",
             warnings=warnings_list
         )
@@ -460,8 +463,8 @@ def analyze(request: AnalyzeRequest) -> AnalysisResult:
         symbol_name=fund_data.get("name") if fund_data else None,
         signal=final_signal,
         trade_style=request.trade_style,
-        total_score=round(float(integrated_total), 1),
-        max_score=round(float(integrated_max), 1),
+        total_score=round(float(integrated_total), 1) if not pd.isna(integrated_total) else 0.0,
+        max_score=round(float(integrated_max), 1) if not pd.isna(integrated_max) else 100.0,
         analysis_mode=analysis_mode,
         macro=macro,
         fundamental=fundamental,
@@ -585,12 +588,12 @@ def _analyze_technical(price_df: pd.DataFrame, trade_style: str) -> TechnicalRes
 
     try:
         closes = price_df["Close"]
-        volumes = price_df["Volume"]
-        highs = price_df["High"]
-        lows = price_df["Low"]
+        volumes = price_df["Volume"] if "Volume" in price_df.columns else pd.Series(0, index=price_df.index)
+        highs = price_df["High"] if "High" in price_df.columns else closes
+        lows = price_df["Low"] if "Low" in price_df.columns else closes
 
         cur = float(closes.iloc[-1])
-        result.current_price = round(cur, 2)
+        result.current_price = round(cur, 2) if not pd.isna(cur) else None
 
         # EMA Calculation
         ema9 = closes.ewm(span=9, adjust=False).mean()
@@ -605,11 +608,11 @@ def _analyze_technical(price_df: pd.DataFrame, trade_style: str) -> TechnicalRes
         e75 = float(ema75.iloc[-1])
         e200 = float(ema200.iloc[-1])
         
-        result.ema9 = round(e9, 2)
-        result.ema20 = round(e20, 2)
-        result.ema50 = round(e50, 2)
-        result.ema75 = round(e75, 2)
-        result.ema200 = round(e200, 2) if len(closes) >= 200 else None
+        result.ema9 = round(e9, 2) if not pd.isna(e9) else None
+        result.ema20 = round(e20, 2) if not pd.isna(e20) else None
+        result.ema50 = round(e50, 2) if not pd.isna(e50) else None
+        result.ema75 = round(e75, 2) if not pd.isna(e75) else None
+        result.ema200 = round(e200, 2) if not pd.isna(e200) else None
         result.above_ema75 = cur > e75
 
         # Golden Cross check (9 crosses 20)
@@ -637,8 +640,8 @@ def _analyze_technical(price_df: pd.DataFrame, trade_style: str) -> TechnicalRes
             avg_vol_20 = float(volumes.tail(20).mean())
             if avg_vol_20 > 0:
                 rvol = float(volumes.iloc[-1]) / avg_vol_20
-                result.volume_ratio = round(rvol, 2)
-                result.volume_surge = rvol >= 2.0
+                result.volume_ratio = round(rvol, 2) if not pd.isna(rvol) else None
+                result.volume_surge = rvol >= 2.0 if not pd.isna(rvol) else False
 
                 if rvol >= 2.0:
                     score += 10
@@ -693,7 +696,7 @@ def _analyze_technical(price_df: pd.DataFrame, trade_style: str) -> TechnicalRes
         rs = gain / (loss + 1e-9)
         rsi_ser = 100 - 100 / (1 + rs)
         rsi = float(rsi_ser.iloc[-1])
-        result.rsi = round(float(rsi), 1)
+        result.rsi = round(float(rsi), 1) if not pd.isna(rsi) else None
 
         if trade_style == "long_hold":
             # 長期では売られ過ぎからの反転を重視
@@ -717,8 +720,8 @@ def _analyze_technical(price_df: pd.DataFrame, trade_style: str) -> TechnicalRes
         macd = ema12 - ema26
         signal = macd.ewm(span=9, adjust=False).mean()
         
-        result.macd = round(float(macd.iloc[-1]), 2)
-        result.macd_signal = round(float(signal.iloc[-1]), 2)
+        result.macd = round(float(macd.iloc[-1]), 2) if not pd.isna(macd.iloc[-1]) else None
+        result.macd_signal = round(float(signal.iloc[-1]), 2) if not pd.isna(signal.iloc[-1]) else None
         
         if result.macd > result.macd_signal:
             score += 5
@@ -732,8 +735,8 @@ def _analyze_technical(price_df: pd.DataFrame, trade_style: str) -> TechnicalRes
         upper = sma20 + (std20 * 2)
         lower = sma20 - (std20 * 2)
         
-        result.bollinger_upper = round(float(upper.iloc[-1]), 2)
-        result.bollinger_lower = round(float(lower.iloc[-1]), 2)
+        result.bollinger_upper = round(float(upper.iloc[-1]), 2) if not pd.isna(upper.iloc[-1]) else None
+        result.bollinger_lower = round(float(lower.iloc[-1]), 2) if not pd.isna(lower.iloc[-1]) else None
         
         if cur > result.bollinger_upper:
             reasons.append("⚠️ ボリンジャーバンド+2σ超え（過熱）")
@@ -746,7 +749,8 @@ def _analyze_technical(price_df: pd.DataFrame, trade_style: str) -> TechnicalRes
         # For daily data, we can use a volume-weighted moving average as an approximation
         # For intraday, we should ideally reset daily, but here we'll do 20-period VWMA
         typical_price = (closes + highs + lows) / 3
-        vwap = (typical_price * volumes).rolling(window=14).sum() / volumes.rolling(window=14).sum()
+        vwap_ser = (typical_price * volumes).rolling(window=14).sum() / (volumes.rolling(window=14).sum() + 1e-9)
+        result.vwap = round(float(vwap_ser.iloc[-1]), 2) if not pd.isna(vwap_ser.iloc[-1]) else None
         # =====================================================
         # 52-Week High/Low (Long-term relative position)
         # =====================================================
@@ -798,33 +802,33 @@ def _score_income(fund_data: dict, jp_stock: bool) -> IncomeResult:
 
     # --- 配当利回り評価 ---
     dy = fund_data.get("dividend_yield")
-    result.dividend_yield = dy
+    result.dividend_yield = round(float(dy), 2) if dy is not None and not pd.isna(dy) else None
     if dy is not None:
         # 日本株 3.5%+, 米国株 3.0%+ で加点
         threshold = 3.5 if jp_stock else 3.0
         warning_limit = 6.0 if jp_stock else 5.0
 
         if dy >= warning_limit:
-            score += 5; reasons.append(f"⚠️ 高利回り警告 {dy:.1f}%（利回り罠の可能性）")
+            score += 5; reasons.append(f"⚠️ 高利回り警告 {dy:.2f}%（利回り罠の可能性）")
         elif dy >= threshold:
-            score += 10; reasons.append(f"✅ 高利回り {dy:.1f}%")
+            score += 10; reasons.append(f"✅ 高利回り {dy:.2f}%")
         elif dy >= 1.5:
-            score += 5; reasons.append(f"✅ 配当あり {dy:.1f}%")
+            score += 5; reasons.append(f"✅ 配当あり {dy:.2f}%")
         else:
-            reasons.append(f"➖ 低利回り {dy:.1f}%")
+            reasons.append(f"➖ 低利回り {dy:.2f}%")
             
         # 5年平均との比較
         avg_5y = fund_data.get("five_year_avg_yield")
-        result.five_year_avg_yield = avg_5y
+        result.five_year_avg_yield = round(float(avg_5y), 2) if avg_5y is not None and not pd.isna(avg_5y) else None
         if avg_5y is not None:
             if dy > avg_5y + 0.5:
-                score += 5; reasons.append(f"✅ 過去5年平均({avg_5y:.1f}%)より利回り高く割安")
+                score += 5; reasons.append(f"✅ 過去5年平均({avg_5y:.2f}%)より利回り高く割安")
     else:
         reasons.append("⚪ 配当データなし")
 
     # --- 配当性向評価 ---
     payout = fund_data.get("payout_ratio")
-    result.payout_ratio = payout
+    result.payout_ratio = round(float(payout), 2) if payout is not None and not pd.isna(payout) else None
     if payout is not None:
         if 20 <= payout <= 60:
             score += 10; reasons.append(f"✅ 配当性向 {payout:.0f}%（健全な還元）")
@@ -838,10 +842,10 @@ def _score_income(fund_data: dict, jp_stock: bool) -> IncomeResult:
     pbr = fund_data.get("pbr")
     if per and pbr:
         graham = per * pbr
-        result.graham_number = graham
+        result.graham_number = round(float(graham), 2) if not pd.isna(graham) else None
         threshold = 30 if jp_stock else 22.5
         if graham < threshold:
-            score += 5; reasons.append(f"✅ グレアム指数 {graham:.1f}（割安基準クリア）")
+            score += 5; reasons.append(f"✅ グレアム指数 {graham:.2f}（割安基準クリア）")
 
     result.score = max(0.0, score)
     result.reasons = reasons
@@ -1326,15 +1330,15 @@ def _analyze_accumulation(price_df, fund_data, macro, trade_style, jp_stock, liq
             if cond_a and cond_b:
                 val_score = w["val"] * 1.0
                 triggered_conditions.append("割安成長")
-                res.reasons.append(f"✅ 低PER({per:.1f})かつ高成長({growth:.1f}%)の「割安成長」銘柄")
+                res.reasons.append(f"✅ 低PER({per:.2f})かつ高成長({growth:.2f}%)の「割安成長」銘柄")
             elif cond_a:
                 val_score = w["val"] * 0.3
                 triggered_conditions.append("割安成長 (低PER)")
-                res.reasons.append(f"✅ 財務的に割安圏内 (PER: {per:.1f})")
+                res.reasons.append(f"✅ 財務的に割安圏内 (PER: {per:.2f})")
             elif cond_b:
                 val_score = w["val"] * 0.3
                 triggered_conditions.append("割安成長 (高成長)")
-                res.reasons.append(f"✅ 高い営業利益成長率 ({growth:.1f}%) を維持")
+                res.reasons.append(f"✅ 高い営業利益成長率 ({growth:.2f}%) を維持")
         else:
             valid_conditions_count -= 1
     res.value_growth_score = val_score

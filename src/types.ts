@@ -11,8 +11,9 @@ export interface AnalyzeRequest {
 export interface ChartDataPoint {
     time: string;
     price: number;
-    ema5?: number;
+    ema9?: number;
     ema20?: number;
+    ema50?: number;
     ema75?: number;
     ema200?: number;
     bollinger_upper?: number;
@@ -51,8 +52,9 @@ export interface FundamentalResult {
 
 export interface TechnicalResult {
     score: number;
-    ema5?: number;
+    ema9?: number;
     ema20?: number;
+    ema50?: number;
     ema75?: number;
     ema200?: number;
     current_price?: number;
