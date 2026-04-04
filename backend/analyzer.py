@@ -159,6 +159,7 @@ def analyze(request: AnalyzeRequest) -> AnalysisResult:
         logger.error(f"Error in _analyze_accumulation: {str(e)}")
 
     # === INTEGRATED SIGNAL LOGIC (NEW SPEC) ===
+    current_price = float(price_df["Close"].iloc[-1])
     # 1. Weights based on Mode
     l6_weight = 1.2  # Base weighting for L6 in the formula "L6 * 1.2 + L3"
     l3_weight = 1.0  # Base weighting for L3
@@ -193,23 +194,75 @@ def analyze(request: AnalyzeRequest) -> AnalysisResult:
     stoppers_active = []
     
     # トレードスタイルに応じたEMAストッパー判定
+    # 5. Stopper Conditions (Pre-calculated for signal determination)
+    stoppers_active = []
+    rvol_val = technical.volume_ratio if technical.volume_ratio is not None else 1.0
+    
+    # トレードスタイルに応じたEMA基準とストッパー判定
     if request.trade_style == "long_hold":
-        # 長期：200日線ストッパー
+        # 長期：200日線基準
         if technical.ema200 is not None:
              ema200_ser = price_df["Close"].ewm(span=200, adjust=False).mean()
-             if len(ema200_ser) >= 20:
-                  slope_20d = (float(ema200_ser.iloc[-1]) / float(ema200_ser.iloc[-20]) - 1)
-                  if slope_20d < -0.001: # 0.1%以上の下落傾斜
-                      stoppers_active.append("200日移動平均線が下向き（長期下落トレンド）")
+             if len(ema200_ser) >= 25:
+                  # ユーザー指定：長期の傾きは25日
+                  slope_val = (float(ema200_ser.iloc[-1]) / float(ema200_ser.iloc[-26]) - 1)
+                  # ストッパー：傾き < 0 かつ 価格 < EMA200
+                  if slope_val < 0 and current_price < technical.ema200:
+                      # 例外解放条件：L6 >= 25, RVOL >= 1.3, ボラ収縮 or ダイバージェンス
+                      is_exception = (l6_score >= 25 and rvol_val >= 1.3 and 
+                                     (any(x in ["ボラ収縮 (強継続)", "ボラ収縮", "ダイバージェンス"] for x in accumulation.triggered_conditions if accumulation)))
+                      if not is_exception:
+                          stoppers_active.append("200日線が下向きかつ価格が200日線以下（長期下落トレンド）")
+                      else:
+                          accumulation.reasons.append("🔓 ストッパー解除：強力な先回りサインに基づき、長期トレンド下でも仕込みを許可")
+                  
+                  # 弱体化：価格 < EMA200 の場合は L3スコア × 0.6
+                  if current_price < technical.ema200 and not stoppers_active:
+                      l3_score = l3_score * 0.6
+                      technical.reasons.append("⚠️ 長期トレンド下（EMA200未満）のため、テクニカル評価を0.6倍に減衰しています")
+
     elif request.trade_style == "swing":
-        # スイング：75日線ストッパー
-        if technical.ema75 is not None:
-             ema75_ser = price_df["Close"].ewm(span=75, adjust=False).mean()
-             if len(ema75_ser) >= 20:
-                  slope_20d = (float(ema75_ser.iloc[-1]) / float(ema75_ser.iloc[-20]) - 1)
-                  if slope_20d < -0.001:
-                      stoppers_active.append("75日移動平均線が下向き（中期下落回避）")
-    # デイトレはストッパーなし
+        # スイング：50日・200日線基準
+        if technical.ema50 is not None and technical.ema200 is not None:
+             ema50_ser = price_df["Close"].ewm(span=50, adjust=False).mean()
+             ema200_ser = price_df["Close"].ewm(span=200, adjust=False).mean()
+             if len(ema50_ser) >= 15:
+                  # ユーザー指定：スイングの傾きは15日
+                  slope_e50 = (float(ema50_ser.iloc[-1]) / float(ema50_ser.iloc[-16]) - 1)
+                  slope_e200 = (float(ema200_ser.iloc[-1]) / float(ema200_ser.iloc[-16]) - 1)
+                  
+                  # ストッパー：200日線の傾き < 0 かつ 価格 < 50日線
+                  if slope_e200 < 0 and current_price < technical.ema50:
+                      # 例外：L6 >= 25 かつ RVOL >= 1.2
+                      is_exception = (l6_score >= 25 and rvol_val >= 1.2)
+                      if not is_exception:
+                          stoppers_active.append("EMA200下向き かつ 価格がEMA50以下のため完全禁止(NG)")
+                      else:
+                          accumulation.reasons.append("🔓 ストッパー解除：強力な先回りサインと出来高増加により、下落トレンド内でも仕込みを許可")
+
+                  # 弱体化：価格 < EMA200 の場合は L3スコア × 0.7
+                  if current_price < technical.ema200 and not stoppers_active:
+                      l3_score = l3_score * 0.7
+                      technical.reasons.append("⚠️ EMA200未満のため、テクニカル評価を0.7倍に減衰しています")
+    
+    elif request.trade_style == "day":
+        # デイトレ：レンジ減衰 (EMA9とEMA20の頻繁クロス)
+        if len(price_df) >= 10:
+            ema9_ser = price_df["Close"].ewm(span=9, adjust=False).mean()
+            ema20_ser = price_df["Close"].ewm(span=20, adjust=False).mean()
+            crossings = 0
+            for i in range(-1, -10, -1):
+                prev = i - 1
+                if (ema9_ser.iloc[i] > ema20_ser.iloc[i] and ema9_ser.iloc[prev] <= ema20_ser.iloc[prev]) or \
+                   (ema9_ser.iloc[i] < ema20_ser.iloc[i] and ema9_ser.iloc[prev] >= ema20_ser.iloc[prev]):
+                    crossings += 1
+            if crossings >= 3:
+                l3_score = l3_score * 0.8
+                technical.reasons.append(f"⚠️ 短期レンジ相場（過去10本でクロス{crossings}回）のため、テクニカル評価を0.8倍に減衰しています")
+        
+        # 初動ブレイク検知
+        if technical.golden_cross and rvol_val >= 1.3 and l6_score >= 20:
+             technical.reasons.append("🚀 初動ブレイク検知：EMA9/20クロス＋出来高急増＋先回り検知の連動による早期エントリー推奨")
 
     # 決算発表間近 (3-5営業日) ストッパー
     is_near_earnings = False
@@ -641,14 +694,17 @@ def _analyze_technical(price_df: pd.DataFrame, trade_style: str) -> TechnicalRes
             if avg_vol_20 > 0:
                 rvol = float(volumes.iloc[-1]) / avg_vol_20
                 result.volume_ratio = round(rvol, 2) if not pd.isna(rvol) else None
-                result.volume_surge = rvol >= 2.0 if not pd.isna(rvol) else False
+                result.volume_surge = rvol >= 1.8 if not pd.isna(rvol) else False
 
                 if rvol >= 2.0:
                     score += 10
-                    reasons.append(f"🔥 RVOL {rvol:.1f}（資金流入）")
+                    reasons.append(f"🔥 RVOL {rvol:.1f}（強い資金流入）")
                 elif rvol >= 1.5:
                     score += 6
-                    reasons.append(f"✅ 出来高増加 {rvol:.1f}x")
+                    reasons.append(f"✅ RVOL {rvol:.1f}（トレンド発生/出来高増加）")
+                elif rvol >= 1.3:
+                    score += 3
+                    reasons.append(f"✅ RVOL {rvol:.1f}（初動/出来高改善）")
 
         # =====================================================
         # Trend Score
@@ -658,34 +714,61 @@ def _analyze_technical(price_df: pd.DataFrame, trade_style: str) -> TechnicalRes
             if cur > e200:
                 score += 15
                 reasons.append("✅ 200日線上（長期上昇トレンド）")
-                # 200日線の傾き（過去20日）
-                if len(ema200) > 20:
-                    slope = (e200 / float(ema200.iloc[-20]) - 1) * 100
-                    if slope > 1.0:
+                # ユーザー指定：長期の傾きは20〜30日（ここでは25日）
+                if len(ema200) > 25:
+                    slope = (e200 / float(ema200.iloc[-26]) - 1) * 100
+                    if slope > 0:
                         score += 5
-                        reasons.append(f"✅ 200日線が右肩上がり (+{slope:.1f}%)")
+                        reasons.append(f"✅ 200日線が右肩上がり (+{slope:.2f}%)")
+            # EMA200下落時のマイナスは統合ロジックの減衰で処理するためここでは除外
+        
+        elif trade_style == "swing":
+            # スイング判定：EMA50, EMA20
+            # スイング傾きは15日
+            slope_e50 = 0
+            if len(ema50) >= 15:
+                slope_e50 = (e50 / float(ema50.iloc[-16]) - 1) * 100
+
+            if cur > e50:
+                score += 8; reasons.append("✅ 価格 > EMA50（上昇トレンド）")
             else:
-                score -= 5
-                reasons.append("❌ 200日線下（長期下落トレンド）")
-        else:
-            if trade_style == "day":
-                if e9 > e20 and cur > e50:
-                    score += 15
-                    reasons.append("✅ 強い上昇トレンド(短期逆指値)")
-                elif e9 > e20:
-                    score += 8
-                    reasons.append("⚠️ 短期上昇傾向")
-                elif cur < e50:
-                    reasons.append("❌ 中期トレンド下落中")
-            else: # swing
-                if e20 > e50 and cur > e200:
-                    score += 15
-                    reasons.append("✅ 強い上昇トレンド(スイング)")
-                elif e20 > e50:
-                    score += 8
-                    reasons.append("⚠️ 中期上昇傾向")
-                elif cur < e200:
-                    reasons.append("❌ 長期トレンド下落中")
+                score -= 8; reasons.append("❌ 価格 < EMA50（調整/弱気）")
+
+            if e20 > e50:
+                score += 5; reasons.append("✅ EMA20 > EMA50（短期上昇強気）")
+            else:
+                score -= 5; reasons.append("❌ EMA20 < EMA50（短期調整）")
+            
+            # EMA20での反発 (直近安値がEMA20に触れて、終値がEMA20の上にある)
+            if float(lows.iloc[-1]) <= e20 and cur > e20:
+                score += 5; reasons.append("✅ EMA20での反発（押し目買いタイミング）")
+            
+            if slope_e50 > 0:
+                score += 3; reasons.append(f"✅ EMA50の傾きが上向き (+{slope_e50:.2f}%)")
+
+        elif trade_style == "day":
+            # デイトレ判定：EMA9, EMA20, EMA50
+            # 完璧な並び（パーフェクトオーダー）
+            if e9 > e20 > e50:
+                score += 10; reasons.append("✅ EMA9 > 20 > 50 (パーフェクトオーダー)")
+            elif e9 < e20 < e50:
+                score -= 10; reasons.append("❌ EMA9 < 20 < 50 (下降パーフェクトオーダー)")
+
+            if cur > e20:
+                score += 6; reasons.append("✅ 価格 > EMA20（押し目ゾーン上部）")
+            else:
+                score -= 6; reasons.append("❌ 価格 < EMA20（戻り売りゾーン）")
+
+            # EMA9での反発
+            if float(lows.iloc[-1]) <= e9 and cur > e9:
+                score += 5; reasons.append("✅ EMA9での反発（強い上昇初動/継続）")
+
+            if rvol >= 1.8: # デイトレ向けの強いシグナル加点
+                score += 5; reasons.append(f"🔥 デイトレRVOL高騰 ({rvol:.1f})")
+            
+            # パーフェクトオーダー + EMA9反発 + RVOL増の最強パターン
+            if e9 > e20 > e50 and float(lows.iloc[-1]) <= e9 and cur > e9 and rvol >= 1.5:
+                score += 10; reasons.append("👑 順張り最強パターン：特大Buyチャンス")
 
         # =====================================================
         # RSI
@@ -977,7 +1060,7 @@ def _score_qualitative(fund_data: dict, gemini_api_key: Optional[str], trade_sty
         kw_base = 7.0
         kw_neg_penalty = 1.5
         kw_pos_bonus = 1.0
-    else:  # swing (default)
+    elif trade_style == "swing":
         max_score = 20.0
         ai_multiplier = 2.0
         kw_base = 10.0
