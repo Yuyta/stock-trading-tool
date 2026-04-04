@@ -96,7 +96,7 @@ def analyze(request: AnalyzeRequest) -> AnalysisResult:
             fundamental = _score_fundamental(fund_data, data_source, jp_stock=jp_stock)
             # 日本株でJ-Quantsがない場合、yfinanceでの分析結果に補足を追加
             if jp_stock and not has_jquants:
-                fundamental.reasons.append("💡 J-Quantsキーを設定するとより詳細・正確な財務分析が可能になります")
+                fundamental.reasons.append("・ J-Quantsキーを設定するとより詳細・正確な財務分析が可能になります")
 
     # === Layer 4: Qualitative (news sentiment) ===
     if fund_data is None:
@@ -214,7 +214,7 @@ def analyze(request: AnalyzeRequest) -> AnalysisResult:
                       if not is_exception:
                           stoppers_active.append("200日線が下向きかつ価格が200日線以下（長期下落トレンド）")
                       else:
-                          accumulation.reasons.append("🔓 ストッパー解除：強力な先回りサインに基づき、長期トレンド下でも仕込みを許可")
+                          accumulation.reasons.append("✅ ストッパー解除：強力な先回りサインに基づき、長期トレンド下でも仕込みを許可")
                   
                   # 弱体化：価格 < EMA200 の場合は L3スコア × 0.6
                   if current_price < technical.ema200 and not stoppers_active:
@@ -238,7 +238,7 @@ def analyze(request: AnalyzeRequest) -> AnalysisResult:
                       if not is_exception:
                           stoppers_active.append("EMA200下向き かつ 価格がEMA50以下のため完全禁止(NG)")
                       else:
-                          accumulation.reasons.append("🔓 ストッパー解除：強力な先回りサインと出来高増加により、下落トレンド内でも仕込みを許可")
+                          accumulation.reasons.append("✅ ストッパー解除：強力な先回りサインと出来高増加により、下落トレンド内でも仕込みを許可")
 
                   # 弱体化：価格 < EMA200 の場合は L3スコア × 0.7
                   if current_price < technical.ema200 and not stoppers_active:
@@ -262,7 +262,7 @@ def analyze(request: AnalyzeRequest) -> AnalysisResult:
         
         # 初動ブレイク検知
         if technical.golden_cross and rvol_val >= 1.3 and l6_score >= 20:
-             technical.reasons.append("🚀 初動ブレイク検知：EMA9/20クロス＋出来高急増＋先回り検知の連動による早期エントリー推奨")
+             technical.reasons.append("✅ 初動ブレイク検知：EMA9/20クロス＋出来高急増＋先回り検知の連動による早期エントリー推奨")
 
     # 決算発表間近 (3-5営業日) ストッパー
     is_near_earnings = False
@@ -363,13 +363,13 @@ def analyze(request: AnalyzeRequest) -> AnalysisResult:
     if score_momentum < 0 and (l6_score - l6_prev_score) < 0:
         if final_signal in ["Buy", "Hold"]:
             final_signal = "Sell / Avoid"
-            technical.reasons.append("🚨 テクニカル・先回り検知の両方が低下傾向：Sell判定を優先")
+            technical.reasons.append("❌ テクニカル・先回り検知の両方が低下傾向：Sell判定を優先")
 
     # L6高 & L3低: 仕込み継続
     if l6_score >= 25 and l3_score < 15:
         if final_signal in ["Hold", "Sell / Avoid"]:
             final_signal = "Buy"
-            accumulation.reasons.append("💎 先回り検知が強力、かつテクニカルが低迷しているため「仕込み継続」として分析")
+            accumulation.reasons.append("✅ 先回り検知が強力、かつテクニカルが低迷しているため「仕込み継続」として分析")
 
     # 乖離リスク
     l3_l6_diff = abs(l3_score - l6_score)
@@ -434,13 +434,13 @@ def analyze(request: AnalyzeRequest) -> AnalysisResult:
         # 長期保有・配当向けリスク管理
         dist_from_high = (current_price / high_60d - 1) * 100
         if dist_from_high < -15:
-            warnings_list.append(f"🔴 高値から {dist_from_high:.1f}% 下落。ファンダメンタルに変化がないか再確認してください。")
+            warnings_list.append(f"❌ 高値から {dist_from_high:.1f}% 下落。ファンダメンタルに変化がないか再確認してください。")
         elif dist_from_high < -10:
             warnings_list.append(f"⚠️ 高値から {dist_from_high:.1f}% 下落（警告ライン）。")
             
         # 買い増し（リバランス）フラグの検討
         if ratio >= 0.65 and dist_from_high < -12:
-            warnings_list.append("💎 総合評価が高い中での下落です。リバランス・買い増しの検討余地があります。")
+            warnings_list.append("✅ 総合評価が高い中での下落です。リバランス・買い増しの検討余地があります。")
 
         risk = RiskInfo(
             liquidity_ok=liquidity_ok,
@@ -698,7 +698,7 @@ def _analyze_technical(price_df: pd.DataFrame, trade_style: str) -> TechnicalRes
 
                 if rvol >= 2.0:
                     score += 10
-                    reasons.append(f"🔥 RVOL {rvol:.1f}（強い資金流入）")
+                    reasons.append(f"✅ RVOL {rvol:.1f}（強い資金流入）")
                 elif rvol >= 1.5:
                     score += 6
                     reasons.append(f"✅ RVOL {rvol:.1f}（トレンド発生/出来高増加）")
@@ -764,11 +764,11 @@ def _analyze_technical(price_df: pd.DataFrame, trade_style: str) -> TechnicalRes
                 score += 5; reasons.append("✅ EMA9での反発（強い上昇初動/継続）")
 
             if rvol >= 1.8: # デイトレ向けの強いシグナル加点
-                score += 5; reasons.append(f"🔥 デイトレRVOL高騰 ({rvol:.1f})")
+                score += 5; reasons.append(f"✅ デイトレRVOL高騰 ({rvol:.1f})")
             
             # パーフェクトオーダー + EMA9反発 + RVOL増の最強パターン
             if e9 > e20 > e50 and float(lows.iloc[-1]) <= e9 and cur > e9 and rvol >= 1.5:
-                score += 10; reasons.append("👑 順張り最強パターン：特大Buyチャンス")
+                score += 10; reasons.append("✅ 順張り最強パターン：特大Buyチャンス")
 
         # =====================================================
         # RSI
@@ -843,7 +843,7 @@ def _analyze_technical(price_df: pd.DataFrame, trade_style: str) -> TechnicalRes
             if trade_style == "long_hold":
                 if -25 <= dist_from_high <= -10:
                     score += 10
-                    reasons.append(f"🔥 52週高値から {dist_from_high:.1f}%（絶好の押し目候補）")
+                    reasons.append(f"✅ 52週高値から {dist_from_high:.1f}%（絶好の押し目候補）")
                 elif dist_from_high < -30:
                     score -= 5
                     reasons.append(f"⚠️ 52週高値から {dist_from_high:.1f}%（落ちるナイフの警戒）")
@@ -868,7 +868,7 @@ def _fundamental_unavailable() -> FundamentalResult:
     result.max_score = 0  # excluded from ratio calculation
     result.data_source = "未設定（J-Quantsキー必要）"
     result.reasons = [
-        "⚪ 日本株のファンダメンタル分析にはJ-Quantsリフレッシュトークンが必要です",
+        "・ 日本株のファンダメンタル分析にはJ-Quantsリフレッシュトークンが必要です",
         "　　設定画面からJ-Quantsキーを入力すると詳細な財務分析が可能になります",
     ]
     return result
@@ -877,7 +877,7 @@ def _score_income(fund_data: dict, jp_stock: bool) -> IncomeResult:
     result = IncomeResult()
     if not fund_data:
         result.data_source = "なし"
-        result.reasons.append("⚪ 財務データが取得できないためインカム評価をスキップします")
+        result.reasons.append("・ 財務データが取得できないためインカム評価をスキップします")
         return result
 
     score = 0.0
@@ -898,7 +898,7 @@ def _score_income(fund_data: dict, jp_stock: bool) -> IncomeResult:
         elif dy >= 1.5:
             score += 5; reasons.append(f"✅ 配当あり {dy:.2f}%")
         else:
-            reasons.append(f"➖ 低利回り {dy:.2f}%")
+            reasons.append(f"・ 低利回り {dy:.2f}%")
             
         # 5年平均との比較
         avg_5y = fund_data.get("five_year_avg_yield")
@@ -907,7 +907,7 @@ def _score_income(fund_data: dict, jp_stock: bool) -> IncomeResult:
             if dy > avg_5y + 0.5:
                 score += 5; reasons.append(f"✅ 過去5年平均({avg_5y:.2f}%)より利回り高く割安")
     else:
-        reasons.append("⚪ 配当データなし")
+        reasons.append("・ 配当データなし")
 
     # --- 配当性向評価 ---
     payout = fund_data.get("payout_ratio")
@@ -943,7 +943,7 @@ def _fundamental_unavailable_day() -> FundamentalResult:
     result.max_score = 0  # excluded from ratio calculation
     result.data_source = "非対象（デイトレモード）"
     result.reasons = [
-        "⚪ デイトレードモードのため、ファンダメンタル（長期目線）分析は除外されています",
+        "・ デイトレードモードのため、ファンダメンタル（長期目線）分析は除外されています",
     ]
     return result
 
@@ -997,7 +997,7 @@ def _score_fundamental(fund_data: dict, data_source: str, jp_stock: bool = False
         else:
             reasons.append(f"❌ PER {per:.1f}倍（割高）")
     else:
-        data_missing += 7; reasons.append("⚪ PERデータなし（スコア対象外）")
+        data_missing += 7; reasons.append("・ PERデータなし（スコア対象外）")
 
     if pbr:
         if pbr < 1.0 and jp_stock:
@@ -1009,7 +1009,7 @@ def _score_fundamental(fund_data: dict, data_source: str, jp_stock: bool = False
         else:
             reasons.append(f"❌ PBR {pbr:.2f}倍（割高）")
     else:
-        data_missing += 6; reasons.append("⚪ PBRデータなし（スコア対象外）")
+        data_missing += 6; reasons.append("・ PBRデータなし（スコア対象外）")
 
     if roe:
         if roe > 15:
@@ -1023,7 +1023,7 @@ def _score_fundamental(fund_data: dict, data_source: str, jp_stock: bool = False
         else:
             reasons.append(f"❌ ROE {roe:.1f}%（低収益）")
     else:
-        data_missing += 7; reasons.append("⚪ ROEデータなし（スコア対象外）")
+        data_missing += 7; reasons.append("・ ROEデータなし（スコア対象外）")
 
     # Max score = 40 minus the portions where data was missing
     result.max_score = 40 - data_missing
@@ -1044,7 +1044,7 @@ def _score_qualitative(fund_data: dict, gemini_api_key: Optional[str], trade_sty
         result.score = 0.0
         result.max_score = 0  # no data → excluded from total
         result.data_source = "なし"
-        result.reasons.append("⚪ ニュースデータなし（スコア対象外）")
+        result.reasons.append("・ ニュースデータなし（スコア対象外）")
         return result
 
     # ── スタイル別の重み設定 ──
@@ -1097,7 +1097,7 @@ def _score_qualitative(fund_data: dict, gemini_api_key: Optional[str], trade_sty
             result.score = max(0.0, kw_base - neg_count * kw_neg_penalty)
             result.sentiment = "negative"
             kw_str = ", ".join(list(set(hits_neg))) # 重複排除
-            result.reasons.append(f"⚠️ ネガティブキーワード検知: {kw_str}（{neg_count}件）")
+            result.reasons.append(f"❌ ネガティブキーワード検知: {kw_str}（{neg_count}件）")
         elif pos_count > 0:
             result.score = min(max_score, kw_base + pos_count * kw_pos_bonus)
             result.sentiment = "positive"
@@ -1106,7 +1106,7 @@ def _score_qualitative(fund_data: dict, gemini_api_key: Optional[str], trade_sty
         else:
             result.score = kw_base
             result.sentiment = "neutral"
-            result.reasons.append("➖ 中立的なニュース（キーワード検知なし）")
+            result.reasons.append("・ 中立的なニュース（キーワード検知なし）")
 
         result.reasons.append("　　Gemini APIキーを設定するとAI詳細分析（満点加点）が利用可能")
         result.news_analyzed = True
@@ -1133,7 +1133,7 @@ def _score_qualitative(fund_data: dict, gemini_api_key: Optional[str], trade_sty
             result.score = max(0.0, kw_base - neg_count * kw_neg_penalty)
             result.sentiment = "negative"
             kw_str = ", ".join(list(set(hits_neg)))
-            result.reasons.append(f"⚠️ API制限/エラーのためキーワード判定: 悪材料検知({kw_str})")
+            result.reasons.append(f"❌ API制限/エラーのためキーワード判定: 悪材料検知({kw_str})")
         elif pos_count > 0:
             result.score = min(max_score, kw_base + pos_count * kw_pos_bonus)
             result.sentiment = "positive"
@@ -1142,7 +1142,7 @@ def _score_qualitative(fund_data: dict, gemini_api_key: Optional[str], trade_sty
         else:
             result.score = kw_base
             result.sentiment = "neutral"
-            result.reasons.append("➖ API制限/エラーのためキーワード判定: 中立（主要ワード検知なし）")
+            result.reasons.append("・ API制限/エラーのためキーワード判定: 中立（主要ワード検知なし）")
         
         # エラーの詳細も理由に含める
         result.reasons.append(f"（エラー詳細: {error_msg[:30]}...）")
