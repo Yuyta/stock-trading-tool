@@ -1,11 +1,12 @@
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, Float, ForeignKey
+import uuid
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, Float, ForeignKey, Uuid
 from sqlalchemy.sql import func
 from database import Base
 
 class User(Base):
     __tablename__ = "users"
 
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
     username = Column(String, unique=True, index=True)
     hashed_password = Column(String)
     is_active = Column(Boolean, default=True)
@@ -14,8 +15,8 @@ class User(Base):
 class AnalysisHistory(Base):
     __tablename__ = "analysis_histories"
 
-    id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"))
+    id = Column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(Uuid(as_uuid=True), ForeignKey("users.id"))
     symbol = Column(String, index=True)
     symbol_name = Column(String, index=True)
     trade_style = Column(String)

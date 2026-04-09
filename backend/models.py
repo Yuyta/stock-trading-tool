@@ -1,6 +1,7 @@
 from pydantic import BaseModel
 from typing import Optional, List
 from datetime import datetime
+import uuid
 
 
 class UserBase(BaseModel):
@@ -17,7 +18,7 @@ class UserLogin(BaseModel):
 
 
 class UserOut(UserBase):
-    id: int
+    id: uuid.UUID
     created_at: datetime
 
     class Config:
@@ -213,8 +214,8 @@ class HistoryCreate(BaseModel):
 
 
 class HistoryOut(BaseModel):
-    id: int
-    user_id: int
+    id: uuid.UUID
+    user_id: uuid.UUID
     symbol: str
     symbol_name: Optional[str] = None
     trade_style: str

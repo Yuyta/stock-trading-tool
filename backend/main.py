@@ -1,5 +1,6 @@
 import logging
 import os
+import uuid
 from fastapi import FastAPI, Depends, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
@@ -152,7 +153,7 @@ def get_histories(
 
 
 @app.delete("/api/history/{history_id}")
-def delete_history(history_id: int, current_user: Optional[db_models.User] = Depends(get_current_user), db: Session = Depends(get_db)):
+def delete_history(history_id: uuid.UUID, current_user: Optional[db_models.User] = Depends(get_current_user), db: Session = Depends(get_db)):
     if current_user is None:
         raise HTTPException(status_code=401, detail="認証が必要です")
     

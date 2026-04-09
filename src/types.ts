@@ -153,7 +153,7 @@ export interface AppSettings {
 }
 
 export interface User {
-    id: number;
+    id: string;
     username: string;
     created_at: string;
 }
@@ -165,8 +165,8 @@ export interface AuthState {
 }
 
 export interface AnalysisHistory {
-    id: number;
-    user_id: number;
+    id: string;
+    user_id: string;
     symbol: string;
     symbol_name?: string;
     trade_style: string;
