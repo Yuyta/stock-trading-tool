@@ -17,7 +17,7 @@ export const History: React.FC<HistoryProps> = ({ onBack, onSelectDetail }) => {
   const { token } = useAuth();
   const [histories, setHistories] = useState<AnalysisHistory[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [isDeleting, setIsDeleting] = useState<number | null>(null);
+  const [isDeleting, setIsDeleting] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [searchSymbol, setSearchSymbol] = useState('');
   const [sortBy, setSortBy] = useState<'created_at' | 'symbol'>('created_at');
@@ -49,7 +49,7 @@ export const History: React.FC<HistoryProps> = ({ onBack, onSelectDetail }) => {
     }
   };
 
-  const handleDelete = async (e: React.MouseEvent, id: number) => {
+  const handleDelete = async (e: React.MouseEvent, id: string) => {
     e.stopPropagation(); // 親の onClick (詳細表示) を発火させない
     
     if (!window.confirm('この履歴を削除してもよろしいですか？')) {
