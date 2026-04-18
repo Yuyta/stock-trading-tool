@@ -128,29 +128,7 @@ def analyze(request: AnalyzeRequest) -> AnalysisResult:
     income = None
     if request.trade_style == "long_hold":
         income = _score_income(fund_data, jp_stock)
-
-    # === Total Score & Max Score ===
-    # スタイルに応じた比重調整
-    if request.trade_style == "day":
-        tech_weight = 1.0
-        fund_weight = 0.0
-        income_weight = 0.0
-    elif request.trade_style == "long_hold":
-        tech_weight = 0.4  # 長期ではテクニカルを大幅に下げる
-        fund_weight = 1.0
-        income_weight = 1.0
-    else:  # swing (default)
-        tech_weight = 0.8
-        fund_weight = 1.0
-        income_weight = 0.0
-
-    total = (technical.score * tech_weight) + qualitative.score + fundamental.sub_total
-    max_total = (40 * tech_weight) + qualitative.max_score + fundamental.max_score
     
-    if income:
-        total += income.score
-        max_total += income.max_score
-
     # === Layer 6: Accumulation Detection ===
     accumulation = None
     try:
@@ -160,16 +138,29 @@ def analyze(request: AnalyzeRequest) -> AnalysisResult:
 
     # === INTEGRATED SIGNAL LOGIC (NEW SPEC) ===
     current_price = float(price_df["Close"].iloc[-1])
-    # 1. Weights based on Mode
-    l6_weight = 1.2  # Base weighting for L6 in the formula "L6 * 1.2 + L3"
-    l3_weight = 1.0  # Base weighting for L3
-
+    
+    # 1. Weights based on Style (Unified weighting system)
+    # L2: Fund, L3: Tech, L4: Qual, L5: Income, L6: Accum
+    weights = {
+        "l6": 1.2,
+        "l3": 1.0,
+        "l2": 1.0,
+        "l4": 1.0,
+        "l5": 1.0
+    }
+    
     if request.trade_style == "long_hold":
-        l6_weight *= 1.3
-        l3_weight *= 0.7
+        weights["l6"] *= 1.3
+        weights["l3"] *= 0.7
+        weights["l2"] *= 1.3
+        weights["l5"] *= 1.3
     elif request.trade_style == "day":
-        l6_weight *= 0.7
-        l3_weight *= 1.3
+        weights["l6"] *= 0.7
+        weights["l3"] *= 1.3
+        weights["l2"] = 0.0 # デイトレはファンダ除外
+        weights["l5"] = 0.0
+    elif request.trade_style == "swing":
+        weights["l5"] = 0.0 # スイングは通常配当除外
     
     # 2. Base Components
     l6_score = accumulation.score if accumulation else 0
@@ -177,18 +168,16 @@ def analyze(request: AnalyzeRequest) -> AnalysisResult:
     
     # 3. Layer 6 Attenuation on Layer 3
     if l6_score < 15:
-        # Layer 6 < 15の場合はLayer 3に減衰係数0.7を適用
-        l3_score = l3_score * 0.7
+        # Layer 6 < 15の場合はLayer 3に減衰係数0.85を適用 (緩和)
+        l3_score = l3_score * 0.85
         if accumulation:
-            accumulation.reasons.append("⚠️ 先回り検知スコアが極めて低い(15未満)ため、テクニカル評価を0.7倍に減衰させています")
+            accumulation.reasons.append("⚠️ 先回り検知スコアが低い(15未満)ため、テクニカル評価を0.85倍に減衰しています")
 
-    # 4. Total Integrated Score Calculation
-    integrated_total = (l6_score * l6_weight) + l3_score
-    # Max possible for L6 + L3 (assuming 40 + 40 baseline adjusted by weights)
-    # Default Swing: (40 * 1.2) + 40 = 88.0
-    # Long Hold: (40 * 1.2 * 1.3) + (40 * 0.7) = 62.4 + 28 = 90.4
-    # Day: (40 * 1.2 * 0.7) + (40 * 1.3) = 33.6 + 52 = 85.6
-    integrated_max = (40 * l6_weight) + 40
+    # (L3 score may be further attenuated later by EMA or Range checks)
+    # We will finalize total score calculation after all attenuations were applied.
+    # To do that, we need to track if l3_score was modified.
+    # ... logic continues to stoppers ...
+
     
     # 5. Stopper Conditions (Pre-calculated for signal determination)
     stoppers_active = []
@@ -218,8 +207,8 @@ def analyze(request: AnalyzeRequest) -> AnalysisResult:
                   
                   # 弱体化：価格 < EMA200 の場合は L3スコア × 0.6
                   if current_price < technical.ema200 and not stoppers_active:
-                      l3_score = l3_score * 0.6
-                      technical.reasons.append("⚠️ 長期トレンド下（EMA200未満）のため、テクニカル評価を0.6倍に減衰しています")
+                      l3_score = l3_score * 0.75
+                      technical.reasons.append("⚠️ 長期トレンド下（EMA200未満）のため、テクニカル評価を0.75倍に減算しています")
 
     elif request.trade_style == "swing":
         # スイング：50日・200日線基準
@@ -279,7 +268,23 @@ def analyze(request: AnalyzeRequest) -> AnalysisResult:
                 stoppers_active.append(f"決算発表間近 ({earnings_date_str})")
         except: pass
 
-    # 6. Signal Determination Logic
+    # 6. Final Integrated Score & Signal Determination
+    # (Here we sum up all valid layers with their weights)
+    layers_data = [
+        (l6_score, accumulation.max_score if accumulation else 40.0, weights["l6"]),                # L6: Accumulation
+        (l3_score, technical.max_score, weights["l3"]),                                            # L3: Technical
+        (fundamental.sub_total, fundamental.max_score, weights["l2"]),                             # L2: Fundamental
+        (qualitative.score, qualitative.max_score, weights["l4"]),                                 # L4: Qualitative
+        (income.score if income else 0, income.max_score if income else 0, weights["l5"])          # L5: Income
+    ]
+    
+    integrated_total = 0.0
+    integrated_max = 0.0
+    for s, m, w in layers_data:
+        if m > 0 and w > 0: # 有効なLayerのみを計算
+            integrated_total += float(s) * w
+            integrated_max += float(m) * w
+            
     ratio = integrated_total / integrated_max if integrated_max > 0 else 0
     final_signal = "Watch" # Default
     
@@ -634,6 +639,19 @@ def _analyze_macro() -> MacroResult:
     return result
 
 
+# --- Utilities ---
+def _is_valid(val) -> bool:
+    """None, NaN, None-like strings を除外する厳格な判定"""
+    if val is None: return False
+    # 文字列としての "None" や "NaN" を検知
+    if isinstance(val, str):
+        if val.lower() in ["none", "nan", "null", "n/a", "--", ""]: return False
+    try:
+        if pd.isna(val): return False
+    except: pass
+    return True
+
+
 def _analyze_technical(price_df: pd.DataFrame, trade_style: str) -> TechnicalResult:
     result = TechnicalResult()
     score = 0.0
@@ -646,7 +664,9 @@ def _analyze_technical(price_df: pd.DataFrame, trade_style: str) -> TechnicalRes
         lows = price_df["Low"] if "Low" in price_df.columns else closes
 
         cur = float(closes.iloc[-1])
-        result.current_price = round(cur, 2) if not pd.isna(cur) else None
+        result.current_price = round(cur, 2) if _is_valid(cur) else None
+        data_missing = 0.0
+
 
         # EMA Calculation
         ema9 = closes.ewm(span=9, adjust=False).mean()
@@ -680,11 +700,14 @@ def _analyze_technical(price_df: pd.DataFrame, trade_style: str) -> TechnicalRes
         if len(closes) >= 20:
             stock_perf = cur / float(closes.iloc[-20]) - 1
             if stock_perf > 0.05:
-                score += 6
+                score += 5
                 reasons.append(f"✅ Relative Strength強 ({stock_perf*100:.1f}%)")
             elif stock_perf > 0:
-                score += 3
+                score += 2
                 reasons.append("⚠️ 市場平均以上の推移")
+        else:
+            data_missing += 5
+            reasons.append("・ RSデータ（直近20日）不足")
 
         # =====================================================
         # Relative Volume (RVOL)
@@ -705,70 +728,87 @@ def _analyze_technical(price_df: pd.DataFrame, trade_style: str) -> TechnicalRes
                 elif rvol >= 1.3:
                     score += 3
                     reasons.append(f"✅ RVOL {rvol:.1f}（初動/出来高改善）")
+            else:
+                data_missing += 10
+                reasons.append("・ RVOLデータ不足（出来高0）")
+        else:
+            data_missing += 10
+            reasons.append("・ RVOLデータ不足（期間不足）")
 
         # =====================================================
         # Trend Score
         # =====================================================
         if trade_style == "long_hold":
             # 長期トレンド (200日線)
-            if cur > e200:
-                score += 15
-                reasons.append("✅ 200日線上（長期上昇トレンド）")
-                # ユーザー指定：長期の傾きは20〜30日（ここでは25日）
-                if len(ema200) > 25:
-                    slope = (e200 / float(ema200.iloc[-26]) - 1) * 100
-                    if slope > 0:
-                        score += 5
-                        reasons.append(f"✅ 200日線が右肩上がり (+{slope:.2f}%)")
-            # EMA200下落時のマイナスは統合ロジックの減衰で処理するためここでは除外
+            if len(closes) >= 200:
+                if cur > e200:
+                    score += 15
+                    reasons.append("✅ 200日線上（長期上昇トレンド）")
+                    # ユーザー指定：長期の傾きは20〜30日（ここでは25日）
+                    if len(ema200) > 25:
+                        slope = (e200 / float(ema200.iloc[-26]) - 1) * 100
+                        if slope > 0:
+                            score += 5
+                            reasons.append(f"✅ 200日線が右肩上がり (+{slope:.2f}%)")
+            else:
+                data_missing += 5 # 長期トレンド判定を一部除外
+                reasons.append("・ 長期トレンド(200日)データ不足")
         
         elif trade_style == "swing":
             # スイング判定：EMA50, EMA20
-            # スイング傾きは15日
-            slope_e50 = 0
-            if len(ema50) >= 15:
-                slope_e50 = (e50 / float(ema50.iloc[-16]) - 1) * 100
+            if len(closes) >= 50:
+                # スイング傾きは15日
+                slope_e50 = 0
+                if len(ema50) >= 15:
+                    slope_e50 = (e50 / float(ema50.iloc[-16]) - 1) * 100
 
-            if cur > e50:
-                score += 8; reasons.append("✅ 価格 > EMA50（上昇トレンド）")
-            else:
-                score -= 8; reasons.append("❌ 価格 < EMA50（調整/弱気）")
+                if cur > e50:
+                    score += 8; reasons.append("✅ 価格 > EMA50（上昇トレンド）")
+                else:
+                    score -= 8; reasons.append("❌ 価格 < EMA50（調整/弱気）")
 
-            if e20 > e50:
-                score += 5; reasons.append("✅ EMA20 > EMA50（短期上昇強気）")
+                if e20 > e50:
+                    score += 5; reasons.append("✅ EMA20 > EMA50（短期上昇強気）")
+                else:
+                    score -= 5; reasons.append("❌ EMA20 < EMA50（短期調整）")
+                
+                # EMA20での反発 (直近安値がEMA20に触れて、終値がEMA20の上にある)
+                if float(lows.iloc[-1]) <= e20 and cur > e20:
+                    score += 5; reasons.append("✅ EMA20での反発（押し目買いタイミング）")
+                
+                if slope_e50 > 0:
+                    score += 3; reasons.append(f"✅ EMA50の傾きが上向き (+{slope_e50:.2f}%)")
             else:
-                score -= 5; reasons.append("❌ EMA20 < EMA50（短期調整）")
-            
-            # EMA20での反発 (直近安値がEMA20に触れて、終値がEMA20の上にある)
-            if float(lows.iloc[-1]) <= e20 and cur > e20:
-                score += 5; reasons.append("✅ EMA20での反発（押し目買いタイミング）")
-            
-            if slope_e50 > 0:
-                score += 3; reasons.append(f"✅ EMA50の傾きが上向き (+{slope_e50:.2f}%)")
+                data_missing += 5
+                reasons.append("・ 中期トレンド(50日)データ不足")
 
         elif trade_style == "day":
             # デイトレ判定：EMA9, EMA20, EMA50
-            # 完璧な並び（パーフェクトオーダー）
-            if e9 > e20 > e50:
-                score += 10; reasons.append("✅ EMA9 > 20 > 50 (パーフェクトオーダー)")
-            elif e9 < e20 < e50:
-                score -= 10; reasons.append("❌ EMA9 < 20 < 50 (下降パーフェクトオーダー)")
+            if len(closes) >= 50:
+                # 完璧な並び（パーフェクトオーダー）
+                if e9 > e20 > e50:
+                    score += 10; reasons.append("✅ EMA9 > 20 > 50 (パーフェクトオーダー)")
+                elif e9 < e20 < e50:
+                    score -= 10; reasons.append("❌ EMA9 < 20 < 50 (下降パーフェクトオーダー)")
 
-            if cur > e20:
-                score += 6; reasons.append("✅ 価格 > EMA20（押し目ゾーン上部）")
+                if cur > e20:
+                    score += 6; reasons.append("✅ 価格 > EMA20（押し目ゾーン上部）")
+                else:
+                    score -= 6; reasons.append("❌ 価格 < EMA20（戻り売りゾーン）")
+
+                # EMA9での反発
+                if float(lows.iloc[-1]) <= e9 and cur > e9:
+                    score += 5; reasons.append("✅ EMA9での反発（強い上昇初動/継続）")
+
+                if _is_valid(rvol) and rvol >= 1.8: # デイトレ向けの強いシグナル加点
+                    score += 5; reasons.append(f"✅ デイトレRVOL高騰 ({rvol:.1f})")
+                
+                # パーフェクトオーダー + EMA9反発 + RVOL増の最強パターン
+                if e9 > e20 > e50 and float(lows.iloc[-1]) <= e9 and cur > e9 and _is_valid(rvol) and rvol >= 1.5:
+                    score += 10; reasons.append("✅ 順張り最強パターン：特大Buyチャンス")
             else:
-                score -= 6; reasons.append("❌ 価格 < EMA20（戻り売りゾーン）")
-
-            # EMA9での反発
-            if float(lows.iloc[-1]) <= e9 and cur > e9:
-                score += 5; reasons.append("✅ EMA9での反発（強い上昇初動/継続）")
-
-            if rvol >= 1.8: # デイトレ向けの強いシグナル加点
-                score += 5; reasons.append(f"✅ デイトレRVOL高騰 ({rvol:.1f})")
-            
-            # パーフェクトオーダー + EMA9反発 + RVOL増の最強パターン
-            if e9 > e20 > e50 and float(lows.iloc[-1]) <= e9 and cur > e9 and rvol >= 1.5:
-                score += 10; reasons.append("✅ 順張り最強パターン：特大Buyチャンス")
+                data_missing += 5
+                reasons.append("・ トレンド(50日)データ不足")
 
         # =====================================================
         # RSI
@@ -779,21 +819,26 @@ def _analyze_technical(price_df: pd.DataFrame, trade_style: str) -> TechnicalRes
         rs = gain / (loss + 1e-9)
         rsi_ser = 100 - 100 / (1 + rs)
         rsi = float(rsi_ser.iloc[-1])
-        result.rsi = round(float(rsi), 1) if not pd.isna(rsi) else None
+        result.rsi = round(float(rsi), 1) if _is_valid(rsi) else None
 
-        if trade_style == "long_hold":
-            # 長期では売られ過ぎからの反転を重視
-            if rsi < 35:
-                score += 10; reasons.append(f"✅ RSI売られすぎ圏内 {rsi:.0f}")
-            elif 40 <= rsi <= 60:
-                score += 5; reasons.append(f"✅ RSI安定 {rsi:.0f}")
+        if _is_valid(result.rsi):
+            if trade_style == "long_hold":
+                # 長期では売られ過ぎからの反転を重視
+                if rsi < 35:
+                    score += 10; reasons.append(f"✅ RSI売られすぎ圏内 {rsi:.0f}")
+                elif 40 <= rsi <= 60:
+                    score += 5; reasons.append(f"✅ RSI安定 {rsi:.0f}")
+            else:
+                if 40 <= rsi <= 65:
+                    score += 10; reasons.append(f"✅ RSI良好 {rsi:.0f}")
+                elif rsi > 70:
+                    score += 4; reasons.append("⚠️ RSI過熱")
+                elif rsi < 30:
+                    reasons.append("⚠️ RSI売られすぎ")
         else:
-            if 40 <= rsi <= 65:
-                score += 10; reasons.append(f"✅ RSI良好 {rsi:.0f}")
-            elif rsi > 70:
-                score += 4; reasons.append("⚠️ RSI過熱")
-            elif rsi < 30:
-                reasons.append("⚠️ RSI売られすぎ")
+            data_missing += 10
+            reasons.append("・ RSIデータなし（スコア対象外）")
+
 
         # =====================================================
         # MACD
@@ -803,12 +848,17 @@ def _analyze_technical(price_df: pd.DataFrame, trade_style: str) -> TechnicalRes
         macd = ema12 - ema26
         signal = macd.ewm(span=9, adjust=False).mean()
         
-        result.macd = round(float(macd.iloc[-1]), 2) if not pd.isna(macd.iloc[-1]) else None
-        result.macd_signal = round(float(signal.iloc[-1]), 2) if not pd.isna(signal.iloc[-1]) else None
+        result.macd = round(float(macd.iloc[-1]), 2) if _is_valid(macd.iloc[-1]) else None
+        result.macd_signal = round(float(signal.iloc[-1]), 2) if _is_valid(signal.iloc[-1]) else None
         
-        if result.macd > result.macd_signal:
-            score += 5
-            reasons.append("✅ MACDゴールデンクロス")
+        if _is_valid(result.macd) and _is_valid(result.macd_signal):
+            if result.macd > result.macd_signal:
+                score += 5
+                reasons.append("✅ MACDゴールデンクロス")
+        else:
+            data_missing += 5
+            reasons.append("・ MACDデータなし（スコア対象外）")
+
 
         # =====================================================
         # Bollinger Bands (20, 2)
@@ -818,13 +868,19 @@ def _analyze_technical(price_df: pd.DataFrame, trade_style: str) -> TechnicalRes
         upper = sma20 + (std20 * 2)
         lower = sma20 - (std20 * 2)
         
-        result.bollinger_upper = round(float(upper.iloc[-1]), 2) if not pd.isna(upper.iloc[-1]) else None
-        result.bollinger_lower = round(float(lower.iloc[-1]), 2) if not pd.isna(lower.iloc[-1]) else None
+        result.bollinger_upper = round(float(upper.iloc[-1]), 2) if _is_valid(upper.iloc[-1]) else None
+        result.bollinger_lower = round(float(lower.iloc[-1]), 2) if _is_valid(lower.iloc[-1]) else None
         
-        if cur > result.bollinger_upper:
-            reasons.append("⚠️ ボリンジャーバンド+2σ超え（過熱）")
-        elif cur < result.bollinger_lower:
-            reasons.append("✅ ボリンジャーバンド-2σ到達（自律反発期待）")
+        if _is_valid(result.bollinger_upper) and _is_valid(result.bollinger_lower):
+            if cur > result.bollinger_upper:
+                reasons.append("⚠️ ボリンジャーバンド+2σ超え（過熱）")
+            elif cur < result.bollinger_lower:
+                score += 5
+                reasons.append("✅ ボリンジャーバンド-2σ到達（自律反発期待）")
+        else:
+            data_missing += 5
+            reasons.append("・ ボリンジャーバンドデータなし（スコア対象外）")
+
 
         # =====================================================
         # VWAP (Approximated for daily, or reset for intraday)
@@ -852,7 +908,8 @@ def _analyze_technical(price_df: pd.DataFrame, trade_style: str) -> TechnicalRes
         logger.error(f"Error in _analyze_technical for {price_df.index[-1] if not price_df.empty else 'Unknown'}: {str(e)}")
         reasons.append(f"テクニカルエラー {str(e)}")
 
-    result.score = min(40.0, max(0.0, score))
+    result.max_score = 40.0 - data_missing
+    result.score = min(result.max_score, max(0.0, score))
     result.reasons = reasons
     return result
 
@@ -877,16 +934,18 @@ def _score_income(fund_data: dict, jp_stock: bool) -> IncomeResult:
     result = IncomeResult()
     if not fund_data:
         result.data_source = "なし"
+        result.max_score = 0
         result.reasons.append("・ 財務データが取得できないためインカム評価をスキップします")
         return result
 
     score = 0.0
+    data_missing = 0
     reasons = []
 
     # --- 配当利回り評価 ---
     dy = fund_data.get("dividend_yield")
-    result.dividend_yield = round(float(dy), 2) if dy is not None and not pd.isna(dy) else None
-    if dy is not None:
+    result.dividend_yield = round(float(dy), 2) if _is_valid(dy) else None
+    if _is_valid(dy):
         # 日本株 3.5%+, 米国株 3.0%+ で加点
         threshold = 3.5 if jp_stock else 3.0
         warning_limit = 6.0 if jp_stock else 5.0
@@ -902,34 +961,44 @@ def _score_income(fund_data: dict, jp_stock: bool) -> IncomeResult:
             
         # 5年平均との比較
         avg_5y = fund_data.get("five_year_avg_yield")
-        result.five_year_avg_yield = round(float(avg_5y), 2) if avg_5y is not None and not pd.isna(avg_5y) else None
-        if avg_5y is not None:
+        result.five_year_avg_yield = round(float(avg_5y), 2) if _is_valid(avg_5y) else None
+        if _is_valid(avg_5y):
             if dy > avg_5y + 0.5:
                 score += 5; reasons.append(f"✅ 過去5年平均({avg_5y:.2f}%)より利回り高く割安")
+        else:
+            data_missing += 5
     else:
+        data_missing += 15
         reasons.append("・ 配当データなし")
 
     # --- 配当性向評価 ---
     payout = fund_data.get("payout_ratio")
-    result.payout_ratio = round(float(payout), 2) if payout is not None and not pd.isna(payout) else None
-    if payout is not None:
+    result.payout_ratio = round(float(payout), 2) if _is_valid(payout) else None
+    if _is_valid(payout):
+
         if 20 <= payout <= 60:
             score += 10; reasons.append(f"✅ 配当性向 {payout:.0f}%（健全な還元）")
         elif 60 < payout <= 70:
             score += 5; reasons.append(f"⚠️ 配当性向 {payout:.0f}%（やや高い）")
         elif payout > 80:
             score -= 5; reasons.append(f"❌ 配当性向 {payout:.0f}%（減配リスク大）")
+    else:
+        data_missing += 10
 
     # --- グレアム指数 (PER * PBR) ---
     per = fund_data.get("per")
     pbr = fund_data.get("pbr")
-    if per and pbr:
+    if _is_valid(per) and _is_valid(pbr):
+
         graham = per * pbr
         result.graham_number = round(float(graham), 2) if not pd.isna(graham) else None
         threshold = 30 if jp_stock else 22.5
         if graham < threshold:
             score += 5; reasons.append(f"✅ グレアム指数 {graham:.2f}（割安基準クリア）")
+    else:
+        data_missing += 5
 
+    result.max_score = 30 - data_missing
     result.score = max(0.0, score)
     result.reasons = reasons
     return result
@@ -957,8 +1026,10 @@ def _score_fundamental(fund_data: dict, data_source: str, jp_stock: bool = False
 
     # --- Growth (0–20 pts) ---
     growth = fund_data.get("op_income_growth_avg")
-    result.op_income_growth_avg = round(growth, 1) if growth is not None else None
-    if growth is not None:
+    result.op_income_growth_avg = round(growth, 1) if _is_valid(growth) else None
+    
+    data_missing = 0
+    if _is_valid(growth):
         if growth >= 15:
             growth_score = 20
             reasons.append(f"✅ 営業利益成長率 {growth:.1f}%（優秀）")
@@ -974,20 +1045,18 @@ def _score_fundamental(fund_data: dict, data_source: str, jp_stock: bool = False
         else:
             reasons.append(f"❌ 営業利益成長率 {growth:.1f}%（減益）")
     else:
-        # No growth data from this source → 0 pts (not estimated)
-        growth_score = 0
+        data_missing += 20
         reasons.append("⚠️ 営業利益成長データなし（スコア対象外）")
 
     # --- Valuation (0–20 pts): PER 7 + PBR 6 + ROE 7 ---
     per = fund_data.get("per")
     pbr = fund_data.get("pbr")
     roe = fund_data.get("roe")
-    result.per = round(float(per), 1) if per else None
-    result.pbr = round(float(pbr), 2) if pbr else None
-    result.roe = round(float(roe), 1) if roe else None
+    result.per = round(float(per), 1) if _is_valid(per) else None
+    result.pbr = round(float(pbr), 2) if _is_valid(pbr) else None
+    result.roe = round(float(roe), 1) if _is_valid(roe) else None
 
-    data_missing = 0
-    if per:
+    if _is_valid(per):
         if per <= 12:
             val_score += 7; reasons.append(f"✅ PER {per:.1f}倍（割安）")
         elif per <= 15:
@@ -999,7 +1068,7 @@ def _score_fundamental(fund_data: dict, data_source: str, jp_stock: bool = False
     else:
         data_missing += 7; reasons.append("・ PERデータなし（スコア対象外）")
 
-    if pbr:
+    if _is_valid(pbr):
         if pbr < 1.0 and jp_stock:
             val_score += 6; reasons.append(f"✅ PBR {pbr:.2f}倍（東証改革テーマ・PBR1割れ）")
         elif pbr <= 1.2:
@@ -1011,7 +1080,7 @@ def _score_fundamental(fund_data: dict, data_source: str, jp_stock: bool = False
     else:
         data_missing += 6; reasons.append("・ PBRデータなし（スコア対象外）")
 
-    if roe:
+    if _is_valid(roe):
         if roe > 15:
             val_score += 7; reasons.append(f"✅ ROE {roe:.1f}%（超高収益）")
         elif roe >= 10:
@@ -1027,6 +1096,7 @@ def _score_fundamental(fund_data: dict, data_source: str, jp_stock: bool = False
 
     # Max score = 40 minus the portions where data was missing
     result.max_score = 40 - data_missing
+
     result.growth_score = round(growth_score, 1)
     result.valuation_score = round(val_score, 1)
     result.sub_total = round(growth_score + val_score, 1)
@@ -1219,10 +1289,14 @@ def _analyze_accumulation(price_df, fund_data, macro, trade_style, jp_stock, liq
     volumes = price_df["Volume"] if "Volume" in price_df.columns else None
     
     # High drop check (60d)
+    is_high_drop = False
     if len(closes) >= 60:
         high_60 = float(closes.tail(60).max())
         if (float(closes.iloc[-1]) / high_60 - 1) * 100 < -20:
-            stoppers.append("直近高値から-20%以上下落")
+            is_high_drop = True
+            # 長期以外は即時ストッパー。長期は後でスコア判定
+            if trade_style != "long_hold":
+                stoppers.append("直近高値から-20%以上下落")
     
     # Liquidity check
     if liquidity_ok is False:
@@ -1258,8 +1332,11 @@ def _analyze_accumulation(price_df, fund_data, macro, trade_style, jp_stock, liq
     w = weights.get(trade_style, weights["swing"])
     
     res = AccumulationResult()
+    # 欠損項目による分母の減算トラッキング
+    l6_max_missing = 0.0
     valid_conditions_count = 6
     if trade_style == "day": valid_conditions_count = 5 # val=0
+
     
     # EMA5, EMA20 etc for components
     ema5 = closes.ewm(span=5, adjust=False).mean()
@@ -1301,13 +1378,15 @@ def _analyze_accumulation(price_df, fund_data, macro, trade_style, jp_stock, liq
                 res.reasons.append("⚠️ RSIの底打ち傾向を検知（軽微なダイバージェンス）")
     else:
         valid_conditions_count -= 1
+        l6_max_missing += w["div"]
     res.divergence_score = div_score
+
     
     # ② セクター乖離
     sec_score = 0
     sector_name = fund_data.get("sector") if fund_data else None
     macro_strong = macro.strong_sectors if hasattr(macro, 'strong_sectors') else []
-    if sector_name and macro_strong:
+    if _is_valid(sector_name) and macro_strong:
         is_strong_sector = any(s.lower() in sector_name.lower() for s in macro_strong)
         if len(closes) >= 20:
             perf = (float(closes.iloc[-1]) / float(closes.iloc[-20]) - 1) * 100
@@ -1315,9 +1394,14 @@ def _analyze_accumulation(price_df, fund_data, macro, trade_style, jp_stock, liq
                 sec_score = w["sec"] * 1.0
                 triggered_conditions.append("セクター乖離")
                 res.reasons.append(f"✅ セクター({sector_name})は上昇しているが、個別株はまだ押し目圏内で出遅れ")
+        else:
+            valid_conditions_count -= 1
+            l6_max_missing += w["sec"]
     else:
         valid_conditions_count -= 1
+        l6_max_missing += w["sec"]
     res.sector_gap_score = sec_score
+
     
     # ③ ボラティリティ収縮
     sqz_score = 0
@@ -1347,7 +1431,9 @@ def _analyze_accumulation(price_df, fund_data, macro, trade_style, jp_stock, liq
                 res.reasons.append("⚠️ ボラティリティの低下傾向。パワーが蓄積されつつある状態")
     else:
         valid_conditions_count -= 1
+        l6_max_missing += w["sqz"]
     res.volatility_squeeze_score = sqz_score
+
     
     # ④ 出来高トレンド
     vol_score = 0
@@ -1376,7 +1462,9 @@ def _analyze_accumulation(price_df, fund_data, macro, trade_style, jp_stock, liq
                 res.reasons.append("⚠️ 平均以上の出来高が継続中（需給好転の兆し）")
     else:
         valid_conditions_count -= 1
+        l6_max_missing += w["vol"]
     res.volume_trend_score = vol_score
+
     
     # ⑤ 初動トレンド
     tra_score = 0
@@ -1395,36 +1483,42 @@ def _analyze_accumulation(price_df, fund_data, macro, trade_style, jp_stock, liq
                 res.reasons.append("✅ 短期・中期移動平均線が収束。トレンド転換の初動リスクが低い")
     else:
         valid_conditions_count -= 1
+        l6_max_missing += w["tra"]
     res.early_trend_score = tra_score
+
     
     # ⑥ 割安成長
     val_score = 0
+    l6_val_weight = w["val"]
     if trade_style != "day":
         per = fund_data.get("per")
         growth = fund_data.get("op_income_growth_avg")
         
-        if growth is not None and growth < -100:
+        if _is_valid(growth) and growth < -100:
             valid_conditions_count -= 1
-        elif per is not None:
+            l6_max_missing += l6_val_weight
+        elif _is_valid(per):
             threshold = 15 if jp_stock else 20
             cond_a = per < threshold
-            cond_b = growth is not None and growth > 10
+            cond_b = _is_valid(growth) and growth > 10
             
             if cond_a and cond_b:
-                val_score = w["val"] * 1.0
+                val_score = l6_val_weight * 1.0
                 triggered_conditions.append("割安成長")
                 res.reasons.append(f"✅ 低PER({per:.2f})かつ高成長({growth:.2f}%)の「割安成長」銘柄")
             elif cond_a:
-                val_score = w["val"] * 0.3
+                val_score = l6_val_weight * 0.3
                 triggered_conditions.append("割安成長 (低PER)")
                 res.reasons.append(f"✅ 財務的に割安圏内 (PER: {per:.2f})")
             elif cond_b:
-                val_score = w["val"] * 0.3
+                val_score = l6_val_weight * 0.3
                 triggered_conditions.append("割安成長 (高成長)")
                 res.reasons.append(f"✅ 高い営業利益成長率 ({growth:.2f}%) を維持")
         else:
             valid_conditions_count -= 1
+            l6_max_missing += l6_val_weight
     res.value_growth_score = val_score
+
     
     # Combo Bonus
     combo_bonus = 0
@@ -1440,7 +1534,8 @@ def _analyze_accumulation(price_df, fund_data, macro, trade_style, jp_stock, liq
     
     # Total
     total = sum([res.divergence_score, res.sector_gap_score, res.volatility_squeeze_score, res.volume_trend_score, res.early_trend_score, res.value_growth_score]) + res.combo_bonus
-    res.score = min(40, max(0, total))
+    res.max_score = 40.0 - l6_max_missing
+    res.score = min(res.max_score, max(0, total))
     
     # Confidence
     if valid_conditions_count > 0:
@@ -1461,6 +1556,16 @@ def _analyze_accumulation(price_df, fund_data, macro, trade_style, jp_stock, liq
         
     res.signal_label = _get_label(res.score, trade_style)
     res.triggered_conditions = triggered_conditions
+
+    # 長期限定：スコアによるストッパー解除 (緩和)
+    if trade_style == "long_hold" and is_high_drop:
+        if res.score < 20:
+            res.stopped = True
+            res.stoppers.append("直近高値から-20%以上下落 (スコア20未満のため停止)")
+            res.score = 0
+            res.reasons.append("⚠️ スコア不足のため高値下落ストッパーが発動しました。")
+        else:
+            res.reasons.append("✅ 高値から20%以上下落していますが、先回りスコアが高いため仕込みを許可します。")
 
     if res.combo_bonus > 0:
         res.reasons.append(f"✅ コンボボーナス +{res.combo_bonus}適用")

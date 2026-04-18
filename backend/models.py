@@ -103,6 +103,7 @@ class TechnicalResult(BaseModel):
     vwap: Optional[float] = None
     volume_surge: bool = False
     volume_ratio: Optional[float] = None
+    max_score: float = 40.0
     reasons: List[str] = []
 
 
