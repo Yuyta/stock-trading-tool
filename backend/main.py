@@ -190,12 +190,28 @@ def search_ticker(q: str):
             exchange = r.get("exchange", "")
             quote_type = r.get("quoteType", "")
             
+            # 日本株判定用の情報を一時的に保持
+            exch_disp = r.get("exchDisp", "").lower()
+            
             results.append({
                 "symbol": symbol,
                 "name": name,
                 "exchange": exchange,
-                "type": quote_type
+                "type": quote_type,
+                "_is_jp": (
+                    symbol.upper().endswith((".T", ".O")) or
+                    exchange.upper() in ("JPX", "TYO", "OSA", "TSE") or
+                    any(kw in exch_disp for kw in ("tokyo", "osaka", "nagoya", "sapporo", "fukuoka", "jpx"))
+                )
             })
+
+        # 日本株を優先的にソート
+        results.sort(key=lambda x: x.get("_is_jp", False), reverse=True)
+        
+        # 不要な内部フラグを削除
+        for r in results:
+            r.pop("_is_jp", None)
+
     except Exception as e:
         logger.error(f"yfinance search failed for '{q}': {str(e)}")
 

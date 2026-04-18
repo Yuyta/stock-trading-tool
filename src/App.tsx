@@ -439,7 +439,7 @@ export default function App() {
 
                 <button className="menu-item" onClick={() => { setShowSettings(true); setIsMenuOpen(false); }}>
                   <SettingsIcon size={18} />
-                  <span>API設定</span>
+                  <span>APIキー設定</span>
                 </button>
 
                 <button

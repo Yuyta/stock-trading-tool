@@ -38,6 +38,7 @@ backend/
 * **分析・履歴エンドポイント**:
   * `/api/analyze`: 銘柄判定の実行。
   * `/api/search`: 企業名や銘柄コードからシンボル候補を検索。
+    * **優先表示ロジック**: 日本市場（東証、名証、福証、札証）の銘柄を検索結果の最上位に表示。`.T` (東京) などのサフィックスや、取引所名に含まれる「Tokyo, Osaka, Nagoya, Sapporo, Fukuoka」等のキーワードを基に動的に判定・ソートします。
   * `/api/history` (POST): 分析結果の永続化。
   * `/api/history` (GET): 保存された履歴の取得（検索・ソート対応）。
   * `/api/history/{history_id}` (DELETE): 特定の履歴の削除。
