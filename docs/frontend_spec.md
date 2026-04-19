@@ -58,3 +58,9 @@ src/
 * 全体のカラーパレット (Vibrant Green, Dark Slate, Glass effect)。
 * アニメーション（slide-in, fade-in, spin）の定義。
 * レスポンシブ設計のためのメディアクエリ。
+
+## 🧪 ユニットテスト
+* **フレームワーク**: `Vitest` + `React Testing Library`
+* **テスト実行**: `npm test`
+* **テスト対象**: 主要コンポーネント (`App.tsx`, `History.tsx`) の描画とインタラクション
+* **CI/CD**: GitHub Actions (`.github/workflows/test.yml`) で自動実行

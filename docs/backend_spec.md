@@ -80,3 +80,9 @@ backend/
 
 ### 8. `start.bat`
 * Windows環境向けに、仮想環境の作成、依存関係のインストール、APIサーバーの起動を自動化するスクリプトです。
+
+## 🧪 ユニットテスト
+* **フレームワーク**: `pytest`
+* **テスト実行**: `pytest backend/tests`
+* **テスト対象**: `analyzer.py` のロジック, `main.py` のエンドポイント
+* **CI/CD**: GitHub Actions (`.github/workflows/test.yml`) でプッシュ時に自動実行
