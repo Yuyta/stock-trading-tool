@@ -8,17 +8,22 @@ test('User lifecycle: signup, login, analyze, logout, delete', async ({ page }) 
   await page.goto('/');
   await page.click('text=ログイン / 新規登録');
   await page.click('text=新規登録');
-  await page.locator('input[autoComplete="username"]').fill(username);
-  await page.locator('input[autoComplete="new-password"]').fill(password);
+  await page.fill('input[autoComplete="username"]', username);
+  await page.fill('input[type="password"]', password);
   
-  // Listen for signup alert
-  page.once('dialog', dialog => dialog.accept());
+  // Listen for signup alert and accept it
+  const dialogPromise = page.waitForEvent('dialog');
   await page.click('button:has-text("アカウント作成")');
+  const dialog = await dialogPromise;
+  await dialog.accept();
 
   // 2. Login
   // Signup redirects to login mode automatically in AuthModal.tsx
-  await page.locator('input[autoComplete="username"]').fill(username);
-  await page.locator('input[autoComplete="current-password"]').fill(password);
+  // We wait for the modal to update (login button should appear)
+  await expect(page.locator('button:has-text("ログイン")')).toBeVisible();
+  
+  await page.fill('input[autoComplete="username"]', username);
+  await page.fill('input[type="password"]', password);
   await page.click('button:has-text("ログイン")');
 
   // Verify login success
