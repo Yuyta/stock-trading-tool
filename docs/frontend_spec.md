@@ -71,8 +71,6 @@ src/
 * 全体のカラーパレット (Vibrant Green, Dark Slate, Glass effect)。
 * アニメーション（slide-in, fade-in, spin）の定義。
 * レスポンシブ設計のためのメディアクエリ。
-* **CI/CD**: GitHub Actions (`.github/workflows/test.yml`) で自動実行
-
 ## テスト構成
 
 ### 1. ユニットテスト
@@ -80,9 +78,4 @@ src/
 * **フレームワーク**: `Vitest` + `React Testing Library`
 * **テスト実行**: `npm test`
 * **テスト対象**: 主要コンポーネント (`App.tsx`, `History.tsx`) の描画とインタラクション
-
-### 2. E2E テスト (End-to-End)
-
-* **フレームワーク**: `Playwright`
-* **テスト実行**: `npm run test:e2e`
-* **内容**: ブラウザを実際に操作し、新規登録 → ログイン → 判定実行 → 履歴確認 → 退会 という一連のユーザーライフサイクルを検証します。
+* **CI/CD**: GitHub Actions (`.github/workflows/test.yml`) で自動実行

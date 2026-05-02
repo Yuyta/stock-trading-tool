@@ -480,14 +480,14 @@ export default function App() {
 
                 {user && (
                   <>
-                    <button className="menu-item danger" onClick={handleWithdraw}>
-                      <UserX size={18} />
-                      <span>退会する</span>
-                    </button>
-
                     <button className="menu-item danger" onClick={() => { logout(); setIsMenuOpen(false); }}>
                       <LogOut size={18} />
                       <span>ログアウト</span>
+                    </button>
+                    
+                    <button className="menu-item danger" onClick={handleWithdraw}>
+                      <UserX size={18} />
+                      <span>退会する</span>
                     </button>
                   </>
                 )}
