@@ -23,6 +23,9 @@ export default defineConfig({
       command: 'npm run dev',
       url: 'http://localhost:5173',
       reuseExistingServer: !process.env.CI,
+      env: {
+        VITE_API_URL: process.env.VITE_API_URL || 'http://localhost:8000',
+      }
     },
     {
       command: 'cd backend && python -m uvicorn main:app --port 8000',

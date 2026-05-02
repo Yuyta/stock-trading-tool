@@ -6,22 +6,41 @@ test('User lifecycle: signup, login, analyze, logout, delete', async ({ page }) 
 
   // 1. Signup
   await page.goto('/');
+  
+  // Console log redirection for debugging
+  page.on('console', msg => console.log(`BROWSER LOG: ${msg.text()}`));
+
   await page.click('text=ログイン / 新規登録');
   await page.click('text=新規登録');
   await page.fill('input[autoComplete="username"]', username);
   await page.fill('input[type="password"]', password);
   
-  // Listen for signup alert and accept it
-  const dialogPromise = page.waitForEvent('dialog');
+  // Use a global dialog handler to avoid blocking
+  page.on('dialog', async dialog => {
+    console.log(`DIALOG: ${dialog.message()}`);
+    await dialog.accept();
+  });
+
   await page.click('button:has-text("アカウント作成")');
-  const dialog = await dialogPromise;
-  await dialog.accept();
+
+  // Wait for success (switch to login) or failure (error box)
+  const loginButton = page.locator('button:has-text("ログイン")');
+  const errorBox = page.locator('.alert-box.danger');
+  
+  await Promise.race([
+    loginButton.waitFor({ state: 'visible', timeout: 30000 }),
+    errorBox.waitFor({ state: 'visible', timeout: 30000 })
+  ]).catch(() => {
+    throw new Error('Signup timed out: neither success nor failure detected');
+  });
+
+  if (await errorBox.isVisible()) {
+    const errorText = await errorBox.innerText();
+    throw new Error(`Signup failed in UI: ${errorText}`);
+  }
 
   // 2. Login
   // Signup redirects to login mode automatically in AuthModal.tsx
-  // We wait for the modal to update (login button should appear)
-  await expect(page.locator('button:has-text("ログイン")')).toBeVisible();
-  
   await page.fill('input[autoComplete="username"]', username);
   await page.fill('input[type="password"]', password);
   await page.click('button:has-text("ログイン")');
