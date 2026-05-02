@@ -7,8 +7,14 @@ test('User lifecycle: signup, login, analyze, logout, delete', async ({ page }) 
   // 1. Signup
   await page.goto('/');
   
-  // Console log redirection for debugging
-  page.on('console', msg => console.log(`BROWSER LOG: ${msg.text()}`));
+  // Debug logs
+  page.on('console', msg => console.log(`BROWSER LOG: [${msg.type()}] ${msg.text()}`));
+  page.on('requestfailed', request => console.log(`REQUEST FAILED: ${request.url()} ${request.failure()?.errorText}`));
+  page.on('response', response => {
+    if (response.status() >= 400) {
+      console.log(`BAD RESPONSE: ${response.url()} status=${response.status()}`);
+    }
+  });
 
   await page.click('text=ログイン / 新規登録');
   await page.click('text=新規登録');
@@ -30,8 +36,10 @@ test('User lifecycle: signup, login, analyze, logout, delete', async ({ page }) 
   await Promise.race([
     loginButton.waitFor({ state: 'visible', timeout: 30000 }),
     errorBox.waitFor({ state: 'visible', timeout: 30000 })
-  ]).catch(() => {
-    throw new Error('Signup timed out: neither success nor failure detected');
+  ]).catch(async (e) => {
+    const html = await page.content();
+    console.log(`PAGE HTML ON TIMEOUT: ${html}`);
+    throw new Error(`Signup timed out: neither success nor failure detected. Original error: ${e.message}`);
   });
 
   if (await errorBox.isVisible()) {
