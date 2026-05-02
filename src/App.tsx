@@ -4,7 +4,7 @@ import {
   Activity, BarChart3, Settings as SettingsIcon, PlayCircle, RefreshCw,
   TrendingUp, TrendingDown, Minus, ShieldCheck, ShieldAlert, ShieldX,
   AlertCircle, ChevronRight, Server, Share2, Coins, LogIn, LogOut, Clock, Menu, X,
-  Target, Zap, ExternalLink
+  Target, Zap, ExternalLink, UserX
 } from 'lucide-react';
 import {
   ResponsiveContainer, ComposedChart, Area, XAxis, YAxis, Tooltip, CartesianGrid, Line, Legend
@@ -234,6 +234,31 @@ export default function App() {
     }
   };
 
+  const handleWithdraw = async () => {
+    if (!window.confirm('本当に退会しますか？この操作により全ての履歴とアカウント情報が削除され、元に戻せません。')) {
+      return;
+    }
+
+    try {
+      const resp = await fetch(`${API_BASE}/api/user`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        },
+      });
+      if (resp.ok) {
+        alert('退会処理が完了しました。ご利用ありがとうございました。');
+        logout();
+        setIsMenuOpen(false);
+      } else {
+        const data = await resp.json();
+        alert(`退会に失敗しました: ${data.detail || '不明なエラー'}`);
+      }
+    } catch (e) {
+      alert('通信エラーが発生しました。');
+    }
+  };
+
   const handleShare = async () => {
     if (!result) return;
     setIsSharing(true);
@@ -454,10 +479,17 @@ export default function App() {
                 </button>
 
                 {user && (
-                  <button className="menu-item danger" onClick={() => { logout(); setIsMenuOpen(false); }}>
-                    <LogOut size={18} />
-                    <span>ログアウト</span>
-                  </button>
+                  <>
+                    <button className="menu-item danger" onClick={handleWithdraw}>
+                      <UserX size={18} />
+                      <span>退会する</span>
+                    </button>
+
+                    <button className="menu-item danger" onClick={() => { logout(); setIsMenuOpen(false); }}>
+                      <LogOut size={18} />
+                      <span>ログアウト</span>
+                    </button>
+                  </>
                 )}
               </div>
             </div>

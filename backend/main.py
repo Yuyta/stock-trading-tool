@@ -38,6 +38,7 @@ app = FastAPI(title="Stock Analyzer API", version="1.0.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,
+    allow_origin_regex=r"https://stock-trading-tool-.*\.vercel\.app",
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -168,6 +169,21 @@ def delete_history(history_id: uuid.UUID, current_user: Optional[db_models.User]
     db.delete(db_history)
     db.commit()
     return {"status": "success", "message": "履歴を削除しました"}
+
+
+@app.delete("/api/user")
+def delete_user(current_user: Optional[db_models.User] = Depends(get_current_user), db: Session = Depends(get_db)):
+    if current_user is None:
+        raise HTTPException(status_code=401, detail="認証が必要です")
+    
+    logger.info(f"User withdrawal request: {current_user.username}")
+    
+    # 関連データは db_models.py の cascade="all, delete-orphan" により自動削除されます
+    db.delete(current_user)
+    db.commit()
+    
+    logger.info(f"User deleted: {current_user.username}")
+    return {"status": "success", "message": "ユーザーアカウントと関連データを全て削除しました"}
 
 
 @app.get("/api/search", response_model=SearchResponse)
