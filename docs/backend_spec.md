@@ -31,10 +31,12 @@ backend/
 ### 1. `main.py`
 **役割：APIサーバーのエントリーポイント**
 * FastAPI フレームワークを使用してWebサーバーを立ち上げます。
+* **CORS設定**: 環境変数 `CORS_ORIGINS` による許可に加え、正規表現 `https://stock-trading-tool-.*\.vercel\.app` を用いてVercelのプレビュー環境URLを動的に許可します。
 * **認証エンドポイント**:
   * `/api/signup`: 新規ユーザー登録。
   * `/api/login`: ログインとJWTトークンの発行。
   * `/api/me`: 現在のログインユーザー情報取得。
+  * `/api/user` (DELETE): ユーザーアカウントの削除（退会）。関連する履歴も自動的に削除されます。
 * **分析・履歴エンドポイント**:
   * `/api/analyze`: 銘柄判定の実行。
   * `/api/search`: 企業名や銘柄コードからシンボル候補を検索。
