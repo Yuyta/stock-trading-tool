@@ -31,9 +31,50 @@ logging.basicConfig(
 logger = logging.getLogger("stock-analyzer")
 
 # デプロイ環境向けの設定
-ALLOWED_ORIGINS = os.environ.get("CORS_ORIGINS", "*").split(",")
+CORS_ORIGINS_RAW = os.environ.get("CORS_ORIGINS", "")
+if CORS_ORIGINS_RAW:
+    ALLOWED_ORIGINS = CORS_ORIGINS_RAW.split(",")
+else:
+    # 開発環境向けのデフォルト設定
+    ALLOWED_ORIGINS = ["http://localhost:5173", "http://127.0.0.1:5173"]
 
 app = FastAPI(title="Stock Analyzer API", version="1.0.0")
+
+# --- セキュリティミドルウェア: セキュリティヘッダの追加 ---
+@app.middleware("http")
+async def add_security_headers(request, call_next):
+    response = await call_next(request)
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+    response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    response.headers["Content-Security-Policy"] = "default-src 'self'; script-src 'self'; object-src 'none';"
+    return response
+
+# --- セキュリティミドルウェア: 簡易レート制限 ---
+# 注意: 本番環境で大規模なトラフィックがある場合は Redis 等を使用した本格的な実装を推奨
+request_counts = {}
+
+@app.middleware("http")
+async def rate_limit_middleware(request, call_next):
+    client_ip = request.client.host
+    import time
+    now = time.time()
+    
+    # 60秒間に100リクエストを制限
+    if client_ip not in request_counts:
+        request_counts[client_ip] = []
+    
+    # 古いリクエストを削除
+    request_counts[client_ip] = [t for t in request_counts[client_ip] if now - t < 60]
+    
+    if len(request_counts[client_ip]) > 100:
+        logger.warning(f"Rate limit exceeded for IP: {client_ip}")
+        from fastapi.responses import JSONResponse
+        return JSONResponse(status_code=429, content={"detail": "Too many requests. Please try again later."})
+    
+    request_counts[client_ip].append(now)
+    return await call_next(request)
 
 app.add_middleware(
     CORSMiddleware,

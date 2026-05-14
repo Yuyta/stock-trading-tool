@@ -5,7 +5,13 @@ from typing import Optional
 from jose import JWTError, jwt
 
 # Secret key for JWT. For production, use environment variables.
-SECRET_KEY = os.environ.get("JWT_SECRET", "super-secret-key-replacement")
+SECRET_KEY = os.environ.get("JWT_SECRET")
+if not SECRET_KEY:
+    # Renderなどのデプロイ環境では必須とする
+    if os.environ.get("RENDER") or os.environ.get("VERCEL"):
+        raise RuntimeError("CRITICAL SECURITY ERROR: JWT_SECRET environment variable must be set in production.")
+    SECRET_KEY = "dev-secret-key-change-this-in-production"
+
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7  # 7 days
 
