@@ -1,5 +1,4 @@
 import { useState, useEffect, useRef } from 'react';
-// import html2canvas from 'html2canvas'; // 削除
 import {
   Activity, BarChart3, Settings as SettingsIcon, PlayCircle, RefreshCw,
   TrendingUp, TrendingDown, Minus, ShieldCheck, ShieldAlert, ShieldX,
